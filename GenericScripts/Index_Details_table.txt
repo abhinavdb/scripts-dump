@@ -1,0 +1,24 @@
+DECLARE @SchemaName NVARCHAR(128) = 'dbo'; -- Replace with your schema name
+DECLARE @TableName NVARCHAR(128) = 'Posts'; -- Replace with your table name
+SELECT 
+    t.name AS TableName,
+    i.name AS IndexName,
+    -- Get the leading (key) columns
+    STRING_AGG(CASE WHEN ic.is_included_column = 0 THEN c.name END, ', ') AS LeadingColumns,
+    -- Get the included columns
+    STRING_AGG(CASE WHEN ic.is_included_column = 1 THEN c.name END, ', ') AS IncludedColumns
+FROM 
+    sys.indexes i
+INNER JOIN 
+    sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+INNER JOIN 
+    sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+INNER JOIN 
+    sys.tables t ON i.object_id = t.object_id
+INNER JOIN 
+    sys.schemas s ON t.schema_id = s.schema_id
+WHERE s.name = @SchemaName AND t.name = @TableName AND i.type IN (1, 2) -- Filter for clustered (1) and nonclustered (2) indexes
+GROUP BY t.name, i.name ORDER BY t.name, i.name;
+
+
+-- DBCC SHOW_STATISTICS(Posts,'idx_posts_Score_OwneruserId_title')

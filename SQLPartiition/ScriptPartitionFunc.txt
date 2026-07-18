@@ -1,0 +1,60 @@
+DECLARE @TableName NVARCHAR(128) = 'tblEvent_JS'
+DECLARE @SchemaName NVARCHAR(128) = 'ODS'
+
+-- Get partition function and scheme names
+DECLARE @PartitionFunctionName NVARCHAR(128)
+DECLARE @PartitionSchemeName NVARCHAR(128)
+
+SELECT 
+    @PartitionSchemeName = ps.name,
+    @PartitionFunctionName = pf.name 
+FROM 
+    sys.indexes AS i 
+JOIN 
+    sys.partition_schemes AS ps ON i.data_space_id = ps.data_space_id
+JOIN 
+    sys.partition_functions AS pf ON ps.function_id = pf.function_id
+WHERE 
+    i.object_id = OBJECT_ID(@SchemaName + '.' + @TableName)
+    AND i.index_id < 2
+
+-- Script out partition function
+DECLARE @PartitionFunctionScript NVARCHAR(MAX)
+
+SELECT 
+    @PartitionFunctionScript = 'CREATE PARTITION FUNCTION ' + QUOTENAME(@PartitionFunctionName) + ' (' + 
+        MAX(CAST(SQL_VARIANT_PROPERTY(rv.value, 'BaseType') AS NVARCHAR(100))) + ') AS RANGE ' + 
+        CASE 
+            WHEN pf.boundary_value_on_right = 1 THEN 'RIGHT' 
+            ELSE 'LEFT' 
+        END + ' FOR VALUES (' + 
+        STUFF((SELECT ', ' + 
+        CASE 
+            WHEN CAST(SQL_VARIANT_PROPERTY(rv.value, 'BaseType') AS NVARCHAR(100)) IN ('nvarchar', 'varchar', 'char', 'nchar') THEN '''' + CAST(rv.value AS NVARCHAR(4000)) + ''''
+            ELSE CAST(rv.value AS NVARCHAR(4000))
+        END 
+        FROM sys.partition_range_values AS rv 
+        WHERE pf.function_id = rv.function_id
+        FOR XML PATH('')), 1, 2, '') + ')'
+FROM 
+    sys.partition_functions AS pf
+JOIN 
+    sys.partition_range_values AS rv ON pf.function_id = rv.function_id
+WHERE 
+    pf.name = @PartitionFunctionName
+GROUP BY 
+    pf.name, pf.boundary_value_on_right, pf.function_id
+
+-- Script out partition scheme
+DECLARE @PartitionSchemeScript NVARCHAR(MAX)
+SELECT 
+    @PartitionSchemeScript = 'CREATE PARTITION SCHEME ' + QUOTENAME(@PartitionSchemeName) + ' AS PARTITION ' + QUOTENAME(@PartitionFunctionName) + ' TO (' +
+        STUFF((SELECT ', ' + fg.name 
+        FROM sys.destination_data_spaces AS dds
+        JOIN sys.filegroups AS fg ON dds.data_space_id = fg.data_space_id
+        WHERE dds.partition_scheme_id = (SELECT data_space_id FROM sys.partition_schemes WHERE name = @PartitionSchemeName)
+        FOR XML PATH('')), 1, 2, '') + ')'
+
+-- Print the scripts
+PRINT @PartitionFunctionScript
+PRINT @PartitionSchemeScript

@@ -1,0 +1,60 @@
+$storageAccountName = "storageaccountmikki"
+$containerName = "sqlserver1"
+$sourceRootFolder = "F:\Backups\SQLServer1\"
+$destinationBlobPrefix = "sqlserver" #This is nothing
+$sasToken = "sp=racwdli&st=2023-12-17T06:17:53Z&se=2024-01-10T14:17:53Z&spr=https&sv=2022-11-02&sr=c&sig=hQI2DhY8wVY57GN%2BsLaBpWKc7azQClo%2Fq3aoIuOG3no%3D"
+
+# Import the Azure.Storage module
+Import-Module Az.Storage -Force
+
+# Create a Storage Context with SAS token
+$ctx = New-AzStorageContext -StorageAccountName $storageAccountName -SasToken $sasToken
+
+# Function to check if a blob exists in the Azure Storage
+function Blob-Exists {
+    param (
+        [string]$containerName,
+        [string]$blobName
+    )
+
+    try {
+        Get-AzStorageBlob -Container $containerName -Blob $blobName -Context $ctx -ErrorAction Stop
+        $true
+    } catch {
+        $false
+    }
+}
+
+# Function to recursively copy files from source to destination
+function Copy-Files {
+    param (
+        [string]$sourcePath,
+        [string]$destinationPath
+    )
+
+    # Get the list of files in the current source directory
+    $sourceFiles = Get-ChildItem -Path $sourcePath -Recurse -File
+
+    foreach ($file in $sourceFiles) {
+        # Determine the relative path for the blob
+        $relativePath = $file.FullName.Substring($sourcePath.Length + 1)
+        $blobName = "$destinationPath/$($file.Name)"
+
+        # Check if the blob already exists in Azure Blob Storage
+        if (Blob-Exists -containerName $containerName -blobName $blobName) {
+            Write-Host "Blob '$blobName' already exists. Skipping."
+        } else {
+            # Upload the file to Azure Blob Storage
+            Set-AzStorageBlobContent -Container $containerName -Blob $blobName -File $file.FullName -Context $ctx
+            Write-Host "Uploaded file '$file.FullName' to blob '$blobName'."
+        }
+    }
+}
+
+# Main loop to copy files
+$sourceFolders = Get-ChildItem -Path $sourceRootFolder -Directory
+
+foreach ($sourceFolder in $sourceFolders) {
+    # Copy files directly to the destination container without creating an additional folder
+    Copy-Files -sourcePath $sourceFolder.FullName -destinationPath $sourceFolder.Name
+}

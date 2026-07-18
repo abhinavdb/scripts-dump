@@ -1,0 +1,12 @@
+use tempdb
+GO
+Checkpoint
+GO
+
+DBCC FREEPROCCACHE -- clean cache
+DBCC DROPCLEANBUFFERS -- clean buffers
+DBCC FREESYSTEMCACHE ('ALL') -- clean system cache
+DBCC FREESESSIONCACHE -- clean session cache
+dbcc shrinkfile ('tempdev',1024) -- shrink db file
+dbcc shrinkfile ('templog') -- shrink log file
+GO

@@ -1,0 +1,48 @@
+DECLARE @Date AS NVARCHAR(25)
+    ,@TSQL AS NVARCHAR(MAX)
+    ,@ContainerName AS NVARCHAR(MAX)
+    ,@StorageAccountName AS VARCHAR(MAX)
+    ,@SASKey AS VARCHAR(MAX)
+    ,@DatabaseName AS SYSNAME;
+SELECT @Date = REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR, GETDATE(), 100), '  ', '_'), ' ', '_'), '-', '_'), ':', '_');
+SELECT @StorageAccountName = 'omniqaeastusdbstr'; --- Find this from Azure Portal
+SELECT @ContainerName = 'omnidatabase'; --- Find this from Azure Portal
+SELECT @SASKey = '?sv=2021-06-08&ss=bfqt&srt=sco&sp=rwdlacupitfx&se=2022-06-29T00:20:03Z&st=2022-06-28T16:20:03Z&spr=https&sig=XUT57359knt%2FJfuV%2BzQDdBRXGZBS20Wne0E2Yng9dU8%3D'; --- Find this from Azure Portal
+SELECT @DatabaseName = 'master';
+IF NOT EXISTS (
+        SELECT *
+        FROM sys.credentials
+        WHERE name = '''https://' + @StorageAccountName + '.blob.core.windows.net/' + @ContainerName + ''''
+        )
+BEGIN
+    SELECT @TSQL = 'CREATE CREDENTIAL [https://' + @StorageAccountName + '.blob.core.windows.net/' + @ContainerName + '] WITH IDENTITY = ''SHARED ACCESS SIGNATURE'', SECRET = ''' + REPLACE(@SASKey, '?sv=', 'sv=') + ''';'
+    --SELECT @TSQL
+    EXEC (@TSQL)
+END
+SELECT @TSQL = 'BACKUP DATABASE [' + @DatabaseName + '] TO '
+SELECT @TSQL += 'URL = N''https://' + @StorageAccountName + '.blob.core.windows.net/' + @ContainerName + '/' + @DatabaseName + '_' + @Date + '.bak'''
+SELECT @TSQL += ' WITH COMPRESSION, MAXTRANSFERSIZE = 4194304, BLOCKSIZE = 65536, CHECKSUM, FORMAT, STATS = 1,COPY_ONLY;'
+--SELECT @TSQL
+EXEC (@TSQL)
+
+
+
+
+EXECUTE dbo.DatabaseBackup
+@Databases = 'PCSW30',
+@URL ='https://omniqaeastusdbstr.blob.core.windows.net/testcontainer',
+@BackupType = 'FULL',
+@CheckSum = 'Y',
+@Compress = 'Y',
+@Verify = 'Y',
+@DirectoryStructure =NULL
+
+
+EXECUTE dbo.DatabaseBackup
+@Databases = 'PCSW30',
+@URL ='https://omniqaeastusdbstr.blob.core.windows.net/testcontainer',
+@BackupType = 'LOG',
+@CheckSum = 'Y',
+@Compress = 'Y',
+@Verify = 'Y',
+@DirectoryStructure =NULL

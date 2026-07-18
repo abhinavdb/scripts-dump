@@ -1,0 +1,43 @@
+Notes on Database Master Key (DMK) and Database Encryption Key (DEK) in Azure SQL Database
+1.	DMK (Database Master Key):
+o	Purpose: Protects sensitive information like database scoped credentials by encrypting other keys and secrets within the database.
+o	Creation: Must be created in a user database with a strong password using CREATE MASTER KEY.
+o	Automatic Creation by Azure:
+	If a DMK does not already exist, Azure automatically creates one with a strong, random password when creating database scoped credentials or server audits.
+	The automatically created password is unknown and not discoverable by Microsoft.
+o	Logical Master Database: Users cannot create a DMK in the logical master database in Azure SQL Database.
+o	Recommended Practice: Manually create the DMK to control the encryption password and key management.
+2.	DEK (Database Encryption Key):
+o	Purpose: Encrypts the entire database for Transparent Data Encryption (TDE), protecting data at rest (e.g., database files, transaction logs).
+o	Management: Automatically managed by Azure. Users can optionally use a customer-managed key (BYOK) stored in Azure Key Vault.
+o	Relation to DMK: The DEK and DMK are independent and do not affect each other. The DMK is not involved in TDE or DEK operations.
+3.	TDE (Transparent Data Encryption) and DEK:
+o	DEK is used for TDE to encrypt/decrypt the database at rest.
+o	Managed by a server certificate or a key from Azure Key Vault.
+4.	Important Points from Microsoft’s Documentation:
+o	A DMK is required before creating a database scoped credential.
+o	Azure SQL Database will automatically create a DMK if it doesn’t exist when creating a credential.
+o	Users cannot create a DMK in the logical master database.
+o	The DMK password (if automatically created) is not known to Microsoft and is secure.
+5.	Operational Impact:
+o	Creating a DMK has no impact on production operations or applications.
+o	No changes are needed in applications when creating a DMK.
+6.	Recommended Actions:
+o	Create DMK Manually: Use CREATE MASTER KEY with a strong password for better control.
+o	Rely on Automatic DMK Creation: If you prefer, let Azure handle the DMK creation when you create a database scoped credential.
+Key SQL Commands:
+1.	Create a DMK:
+sql
+Copy code
+USE [YourUserDatabase];
+GO
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'YourStrongPassword';
+GO
+2.	Create a Database Scoped Credential (Auto DMK if none exists):
+sql
+Copy code
+CREATE DATABASE SCOPED CREDENTIAL [YourCredentialName]
+WITH IDENTITY = 'YourIdentity', 
+SECRET = 'YourSecret';
+GO
+These notes should serve as a handy reference for your future work on DMK, DEK, and TDE in Azure SQL Database. Let me know if you need anything else!

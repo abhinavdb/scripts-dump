@@ -1,0 +1,5 @@
+select * from sys.traces
+-- find the trace you added recently trough start time
+
+EXEC sp_trace_setstatus 3, 0   -- put the Id number here at place of 3-- 0 means stop tthe trace
+EXEC sp_trace_setstatus 3, 2   -- put the ID number here at place of 3-- 2 means delete the trace data

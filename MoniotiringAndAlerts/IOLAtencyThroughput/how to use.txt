@@ -1,0 +1,49 @@
+This script perf_counter_measure_performance can be used to calculate everything about current disk
+and it will used when we have to calculate (iops througput latency) for migration 
+or to check vendor commitment
+
+1) Keep the ps file in one folder
+2)
+
+These collection are running at host level to get the actual physical disk information so do not run for SQL server, hostname should be server name.
+-nRate is in seconds
+-nSamples: Number of samples we want, so these two together can decide how long we want data collection to happen
+
+c:> perf_counter_measure_performance.ps1 -HostName DESKTOP-FH2D9SA -nSamples 5761 -nRate 15 > output_file.txt
+
+Best is to put the above script in SQL job, so that it can be started and we dont have to keep the powershell window open for data collection.
+
+SQL Job script
+C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe D:\IOCapture\perf_counter_measure_performance.ps1 -HostName SQLDBAUP025 -nSamples 23040 -nRate 15 > D:\IOCapture\output_file.txt
+
+3) create a table using below script in DBAutility database.
+
+create table perfmon (dts datetime null, category sysname null, counter_name sysname null, instance sysname null, val numeric(38,8) null)
+change data type to nvarchar(max)
+
+4) 
+use SQL server import export wizard to import the data from output.txt file to table "perfmon"
+
+4.1 run the update query
+
+	update   [DBAtools].[dbo].[perfmon] set val=0 where val='
+'
+
+5) use below queries to view for data collection
+SELECT IOPS=cast(A.val as float)+cast(B.val as float),A.dts,A.instance
+  FROM [DBAtools].[dbo].[perfmon] A inner join [DBAtools].[dbo].[perfmon] B
+  ON	A.dts=B.dts and A.instance=B.instance and A.counter_name='Disk Reads/sec' and B.counter_name='Disk Writes/sec'
+  where A.instance='4 G:' AND cast(A.val as float)+cast(B.val as float)>500
+
+  SELECT throughput=((cast(A.val as float)+cast(B.val as float))/1024),*
+  FROM [DBAtools].[dbo].[perfmon] A inner join [DBAtools].[dbo].[perfmon] B
+  ON	A.dts=B.dts and A.instance=B.instance and A.counter_name='Disk read bytes/sec' and B.counter_name='disk write bytes/sec' 
+    where A.instance='2 E:' AND ((cast(A.val as float)+cast(B.val as float))/1024)>60
+
+
+or
+
+
+
+
+

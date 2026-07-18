@@ -1,0 +1,30 @@
+use Yardi
+GO
+sp_MSunmarkreplinfo 'MSpeer_lsns'
+GO
+DROP TABLE sysarticleupdates
+GO
+DROP TABLE sysarticles
+GO
+sp_removedbreplication 'Yardi'
+GO
+DROP TABLE syspublications
+GO
+DROP TABLE sysschemaarticles
+GO
+DROP TABLE systranschemas
+GO
+DROP TABLE syssubscriptions
+GO
+DROP TABLE sysarticlecolumns
+GO
+DROP TABLE MSpub_identity_range
+GO
+DROP TABLE MSpeer_response
+GO
+DROP TABLE MSpeer_request
+GO
+DROP TABLE MSpeer_lsns
+GO
+DROP VIEW sysextendedarticlesview
+GO

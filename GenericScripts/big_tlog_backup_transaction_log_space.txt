@@ -1,0 +1,33 @@
+WITH TransactionDetails AS (
+    SELECT 
+        dt.transaction_id,
+        dt.database_id,
+        DB_NAME(dt.database_id) AS DatabaseName,
+        dt.database_transaction_begin_time,
+        dt.database_transaction_type,
+        dt.database_transaction_state,
+        dt.database_transaction_status,
+        dt.database_transaction_log_record_count,
+        dt.database_transaction_log_bytes_used / 1024.0 / 1024.0 AS LogBytesUsed_MB,
+        dt.database_transaction_log_bytes_reserved / 1024.0 / 1024.0 AS LogBytesReserved_MB,
+        dt.database_transaction_log_bytes_used_system / 1024.0 / 1024.0 AS LogBytesUsedSystem_MB,
+        dt.database_transaction_log_bytes_reserved_system / 1024.0 / 1024.0 AS LogBytesReservedSystem_MB
+    FROM 
+        sys.dm_tran_database_transactions dt
+    WHERE 
+        dt.database_id = DB_ID('MySMS') -- Replace 'YourDatabaseName' with the name of your database
+)
+
+SELECT 
+    td.*,
+    r.text AS ExecutingQuery
+FROM 
+    TransactionDetails td
+LEFT JOIN 
+    sys.dm_tran_session_transactions st ON td.transaction_id = st.transaction_id
+LEFT JOIN 
+    sys.dm_exec_requests er ON st.session_id = er.session_id
+CROSS APPLY 
+    sys.dm_exec_sql_text(er.sql_handle) r
+ORDER BY 
+    td.LogBytesUsed_MB DESC;

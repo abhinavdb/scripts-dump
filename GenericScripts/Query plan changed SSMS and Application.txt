@@ -1,0 +1,32 @@
+SELECT QueryPlan.query_plan as ExecutionPlan ,
+	  SqlText.text as SQLText,
+	  PlanAttributes.value AS SetOptionsInt,
+	  IIF (CAST (PlanAttributes.value as INT) & 1 = 1 , N'Enabled' , N'Disabled') as [ANSI_PADDING],
+	  IIF (CAST (PlanAttributes.value as INT) & 2 = 2 , N'Enabled' , N'Disabled') as [Parallel_Plan],
+	  IIF (CAST (PlanAttributes.value as INT) & 4 = 4 , N'Enabled' , N'Disabled') as [FORCEPLAN],
+	  IIF (CAST (PlanAttributes.value as INT) & 8 = 8 , N'Enabled' , N'Disabled') as [CONCAT_NULL_YIELDS_NULL],
+	  IIF (CAST (PlanAttributes.value as INT) & 16 = 16 , N'Enabled' , N'Disabled') as [ANSI_WARNINGS],
+	  IIF (CAST (PlanAttributes.value as INT) & 32 = 32 , N'Enabled' , N'Disabled') as [ANSI_NULLS],
+	  IIF (CAST (PlanAttributes.value as INT) & 64 = 64 , N'Enabled' , N'Disabled') as [QUOTED_IDENTIFIER],
+	  IIF (CAST (PlanAttributes.value as INT) & 128 = 128 , N'Enabled' , N'Disabled') as [ANSI_NULL_DFLT_ON],
+	  IIF (CAST (PlanAttributes.value as INT) & 256 = 256 , N'Enabled' , N'Disabled') as [ANSI_NULL_DFLT_OFF],
+	  IIF (CAST (PlanAttributes.value as INT) & 512 = 512 , N'Enabled' , N'Disabled') as [NoBrowseTable], -- Indicates that the plan does not use a work table to implement a FOR BROWSE operation.
+	  IIF (CAST (PlanAttributes.value as INT) & 1024 = 1024 , N'Enabled' , N'Disabled') as [TriggerOneRow], --Indicates that the plan contains single row optimization for AFTER trigger delta tables.
+	  IIF (CAST (PlanAttributes.value as INT) & 2048 = 2048 , N'Enabled' , N'Disabled') as [ResyncQuery], --Indicates that the query was submitted by internal system stored procedures.	
+	  IIF (CAST (PlanAttributes.value as INT) & 4096 = 4096 , N'Enabled' , N'Disabled') as [ARITH_ABORT],
+	  IIF (CAST (PlanAttributes.value as INT) & 8192 = 8192 , N'Enabled' , N'Disabled') as [NUMERIC_ROUNDABORT],
+	  IIF (CAST (PlanAttributes.value as INT) & 16384 = 16384 , N'Enabled' , N'Disabled') as [DATEFIRST],
+	  IIF (CAST (PlanAttributes.value as INT) & 32768 = 32768 , N'Enabled' , N'Disabled') as [DATEFORMAT],
+	  IIF (CAST (PlanAttributes.value as INT) & 65536 = 65536 , N'Enabled' , N'Disabled') as [LanguageID],
+	  IIF (CAST (PlanAttributes.value as INT) & 131072 = 131072 , N'Enabled' , N'Disabled') as [UPON], --Indicates that the database option PARAMETERIZATION was set to FORCED when the plan was compiled.
+	  IIF (CAST (PlanAttributes.value as INT) & 262144 = 262144 , N'Enabled' , N'Disabled') as [ROWCOUNT]
+FROM
+	sys.dm_exec_query_stats AS QueryStats
+	CROSS APPLY
+	sys.dm_exec_query_plan(QueryStats.plan_handle) as QueryPlan
+	CROSS APPLY 
+	sys.dm_exec_sql_text(QueryStats.plan_handle) as SqlText
+	CROSS APPLY
+	sys.dm_exec_plan_attributes (QueryStats.plan_handle) AS PlanAttributes
+where 	PlanAttributes.attribute = 'set_options'
+and SqlText.text like '%spOR_GetOpenOrderLinesByAccount%';

@@ -1,0 +1,41 @@
+# Define the performance counter path for average disk seconds per transfer
+$counterPath = '\LogicalDisk(*)\Avg. Disk sec/Transfer'
+
+# Specify the number of samples and the interval
+$numberOfSamples = 10  # Change this to the desired number of samples
+$sampleInterval = 5   # Change this to the desired interval in seconds
+
+# Get the counter data
+$counterData = Get-Counter -Counter $counterPath -SampleInterval $sampleInterval -MaxSamples $numberOfSamples
+
+# Format the counter data as a table with values in milliseconds
+$diskInfo = $counterData.CounterSamples | ForEach-Object {
+    [PSCustomObject]@{
+        Path = $_.Path
+        AvgDiskSecPerTransfer_ms = ($_.CookedValue * 1000) # Convert seconds to milliseconds
+    }
+}
+
+# Specify the path where you want to save the file
+$savePath = "F:\DiskStats"
+
+# Create the directory if it doesn't exist
+if (-not (Test-Path -Path $savePath -PathType Container)) {
+    New-Item -Path $savePath -ItemType Directory
+}
+
+# Generate a filename with date and time
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$filename = Join-Path -Path $savePath -ChildPath "DiskPerfData_$timestamp.txt"
+
+# Convert the diskInfo table to formatted text
+$outputText = $diskInfo | Format-Table | Out-String
+
+# Add the number of samples and interval information to the output
+$outputText += "Number of Samples: $numberOfSamples`r`n"
+$outputText += "Sample Interval (seconds): $sampleInterval`r`n"
+
+# Save the data to a text file
+$outputText | Out-File -FilePath $filename
+
+Write-Host "Disk performance data saved to $filename"

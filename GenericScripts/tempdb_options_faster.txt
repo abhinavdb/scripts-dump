@@ -1,0 +1,11 @@
+Feature                                   Temp Tables         Table Variables       In-Memory Table Variables
+-----------------------------------------------------------------------------------------------------------------
+Has statistics                            Yes                 No (until 2019)       No
+Statistics reused across sessions         Yes                 No (until 2019)       No
+GAM/SGAM/PFS contention at scale          High                Medium                Low
+
+
+
+First preference , Temp tables
+seconds Table Variables
+Third but needs lot of changes in code to use in-memory table variables

@@ -1,0 +1,26 @@
+drop table Test
+
+CREATE TABLE dbo.Test(
+   Id INT IDENTITY(1,1) CONSTRAINT PK_Test PRIMARY KEY CLUSTERED, 
+   TextValue VARCHAR(20) NULL
+);
+
+CREATE INDEX IX_Test_TextValue ON dbo.Test(TextValue);
+ 
+
+INSERT INTO dbo.Test(TextValue) 
+SELECT TOP 1000000 'blah'
+FROM sys.objects a, sys.objects b, sys.objects c, sys.objects d;
+
+
+DBCC SHOW_STATISTICS('dbo.Test', IX_Test_TextValue) WITH STAT_HEADER;
+go
+DBCC SHOW_STATISTICS('dbo.Test',[_WA_Sys_00000003_71BCD978] ) WITH STAT_HEADER;
+go
+select getdate()
+GO
+
+
+SELECT * 
+FROM dbo.Test
+WHERE TextValue = 'not blah’;'

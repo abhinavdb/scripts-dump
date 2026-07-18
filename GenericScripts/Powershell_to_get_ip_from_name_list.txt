@@ -1,0 +1,29 @@
+# Define the location of the text file containing server names
+$serverFilePath = "C:\path\to\your\servers.txt"  # Update this path
+
+# Read server names from the file
+$serverNames = Get-Content -Path $serverFilePath
+
+# Initialize an array to hold the output results
+$results = @()
+
+foreach ($server in $serverNames) {
+    try {
+        # Attempt to resolve the IP address for each server
+        $ip = [System.Net.Dns]::GetHostAddresses($server) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | Select-Object -First 1
+        $ipAddress = if ($ip) { $ip.IPAddressToString } else { "N/A" }
+    }
+    catch {
+        # If an error occurs (e.g., server not found), set IP as "Not found"
+        $ipAddress = "Not found"
+    }
+
+    # Add the result to the output array
+    $results += [PSCustomObject]@{
+        ServerName = $server
+        IPAddress  = $ipAddress
+    }
+}
+
+# Display the output in a table format
+$results | Format-Table -AutoSize

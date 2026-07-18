@@ -1,0 +1,84 @@
+Reads : user_seeks + user_scans + user_lookups
+
+Writes: user_updates
+Number of updates by user queries. This includes Insert, Delete, and Updates representing number of operations done not the actual rows affected.
+
+Singleton lookups :total_singleton_lookup_count
+
+scans/seek :total_range_scan_count
+
+deletes :total_leaf_delete_count
+
+updates: total_leaf_update_count
+
+
+
+leaf_insert_count,-number of times operation was done, NOT pages NOT ROWS
+leaf_delete_count,
+leaf_update_count,It gives the maintenance cost of the index. That is how many time a DML statement has caused this index to need to be updated.
+leaf_ghost_count- number of times operation was done, NOT pages NOT ROWS
+
+********************************
+
+unique_compiles : Compiles
+Number of compilations and recompilations that would benefit from this missing index group. C
+ompilations and recompilations of many different queries can contribute to this column value.
+
+avg_user_impact AS [Est Index Improvement]
+Average percentage benefit that user queries could experience if this missing index group was implemented. 
+The value means that the query cost would on average drop by this percentage if this missing index group was implemented.
+
+
+user_seeks AS [Seeks]
+Number of seeks caused by user queries that the recommended index in the group could have been used for.
+
+user_scans AS [Scans]
+Number of scans caused by user queries that the recommended index in the group could have been used for.
+
+
+avg_total_user_cost AS [Avg Query Cost]
+Average cost of the user queries that could be reduced by the index in the group
+
+index_estimated_impact AS [Estimated Impact]
+(user_seeks + user_scans) uses
+
+
+
+
+
+
+
+insert into testtab values(1,'testingit')
+insert into testtab values(2,'testingit')
+insert into testtab values(3,'testingit')
+insert into testtab values(5,'testingit')
+insert into testtab values(4,'testingit')
+insert into testtab values(6,'testingit')
+
+delete from testtab where id=1
+delete from testtab where id=2
+delete from testtab where id=3
+delete from testtab where id=4
+
+DECLARE @i INT 
+SET @i = 1 
+WHILE @i <= 800
+BEGIN 
+INSERT INTO testtab VALUES (@i,'bahu') 
+SET @i = @i + 1 
+END
+
+begin tran
+
+delete from testtab where id>5
+
+
+
+commit
+rollback
+
+update testtab set id=7 where name='bahu'
+
+SELECT leaf_insert_count,leaf_delete_count,leaf_update_count,leaf_ghost_count
+
+FROM sys.dm_db_index_operational_stats(DB_ID(), OBJECT_ID('testtab'), 1, NULL)

@@ -1,0 +1,25 @@
+SELECT
+    t.[Name] AS TableName,
+    p.[rows] AS [RowCount],
+    SUM(a.total_pages) * 8 AS TotalSpaceKB,
+    SUM(a.used_pages) * 8 AS UsedSpaceKB
+FROM sys.tables t
+INNER JOIN sys.indexes i ON t.OBJECT_ID = i.object_id
+INNER JOIN sys.partitions p ON i.object_id = p.OBJECT_ID AND i.index_id = p.index_id
+INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+WHERE t.is_ms_shipped = 0 AND i.OBJECT_ID > 255
+GROUP BY t.[Name], p.[Rows]
+ORDER BY t.[Name]
+
+
+
+SELECT
+    i.[name] AS IndexName,
+    t.[name] AS TableName,
+    SUM(s.[used_page_count]) * 8 AS IndexSizeKB
+FROM sys.dm_db_partition_stats AS s
+INNER JOIN sys.indexes AS i ON s.[object_id] = i.[object_id] 
+    AND s.[index_id] = i.[index_id]
+INNER JOIN sys.tables t ON t.OBJECT_ID = i.object_id
+GROUP BY i.[name], t.[name]
+ORDER BY i.[name], t.[name]

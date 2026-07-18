@@ -1,0 +1,14 @@
+SELECT
+ DB_NAME(resource_database_id)
+ , s.original_login_name,s.session_id
+ , s.status
+ , s.program_name
+ , s.host_name
+ , (select text from sys.dm_exec_sql_text(exrequests.sql_handle))
+ ,dbl.request_status,dbl.request_type,dbl.request_mode
+from
+  sys.dm_tran_locks dbl
+     JOIN sys.dm_exec_sessions s ON dbl.request_session_id = s.session_id
+  INNER JOIN  sys.dm_exec_requests exrequests on dbl.request_session_id = exrequests.session_id
+where
+ DB_NAME(dbl.resource_database_id) = 'UH1' AND dbl.request_mode='X'

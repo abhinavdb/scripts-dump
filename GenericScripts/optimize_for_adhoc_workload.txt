@@ -1,0 +1,12 @@
+SELECT [AdHoc_Plan_MB],
+[Total_Cache_MB],
+[AdHoc %] = [AdHoc_Plan_MB] * 100.0 / [Total_Cache_MB]
+FROM (
+SELECT
+[AdHoc_Plan_MB] = SUM(CASE
+WHEN [objtype] = 'adhoc' THEN [size_in_bytes]
+ELSE 0
+END * 1.0) / 1048576.0,
+[Total_Cache_MB] = SUM([size_in_bytes] * 1.0) / 1048576.0
+FROM [sys].[dm_exec_cached_plans]
+) [T];

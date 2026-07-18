@@ -1,0 +1,31 @@
+--Disabling:
+ALTER DATABASE SCOPED CONFIGURATION SET BATCH_MODE_ON_ROWSTORE = OFF
+
+--Enabling:
+ALTER DATABASE SCOPED CONFIGURATION SET BATCH_MODE_ON_ROWSTORE = ON
+
+--Get the current state of features available in 2019 or 2022
+SELECT * FROM sys.database_scoped_configurations WHERE name = 'BATCH_MODE_ON_ROWSTORE'
+
+-------------------------------
+Auto-Tuning Option - SQL 2022
+-------------------------------
+
+ALTER DATABASE StackOverflow2013 SET AUTOMATIC_TUNING (FORCE_LAST_GOOD_PLAN = OFF) / ON based on the need
+--CREATE_INDEX = OFF
+--DROP_INDEX = OFF
+
+select * from sys.database_automatic_tuning_options
+
+select * from sys.database_automatic_tuning_mode
+
+SELECT * FROM sys.database_scoped_configurations
+
+
+********************************************************************************************
+USE [master]
+GO
+ALTER DATABASE [stackoverflow2010_22] SET COMPATIBILITY_LEVEL = 130
+GO
+ALTER DATABASE [stackoverflow2010_22] SET COMPATIBILITY_LEVEL = 160
+GO

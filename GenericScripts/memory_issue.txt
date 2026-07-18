@@ -1,0 +1,22 @@
+SELECT @@SERVERNAME AS [Server Name]
+,total_physical_memory_kb / 1024 AS [Total Physical Memory (MB)]
+,available_physical_memory_kb / 1024 AS [Available Physical Memory (MB)]
+,total_page_file_kb / 1024 AS [Total Page File Memory (MB)]
+,available_page_file_kb / 1024 AS [Available Page File Memory (MB)]
+,system_memory_state_desc AS [Available Physical Memory]
+,CURRENT_TIMESTAMP AS [Current Date Time]
+FROM sys.dm_os_sys_memory
+OPTION (RECOMPILE);
+GO
+
+SELECT physical_memory_in_use_kb / 1024 AS [Physical Memory In Use (MB)]
+,locked_page_allocations_kb / 1024 AS [Locked Page In Memory Allocations (MB)]
+,memory_utilization_percentage AS [Memory Utilization Percentage]
+,available_commit_limit_kb / 1024 AS [Available Commit Limit (MB)]
+,CASE WHEN process_physical_memory_low = 0 THEN 'No Memory Pressure Detected' ELSE 'Memory Low' END AS 'Process Physical Memory'
+,CASE WHEN process_virtual_memory_low = 0 THEN 'No Memory Pressure Detected' ELSE 'Memory Low' END AS 'Process Virtual Memory'
+,CURRENT_TIMESTAMP AS [Current Date Time]
+FROM sys.dm_os_process_memory
+OPTION (RECOMPILE);
+GO
+

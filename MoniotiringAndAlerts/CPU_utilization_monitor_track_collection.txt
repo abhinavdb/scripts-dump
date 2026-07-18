@@ -1,0 +1,59 @@
+CREATE TABLE WorkerThreadMonitoring (
+    MonitorTime DATETIME,
+    TotalWorkerThreads INT,
+    ActiveWorkerThreads INT,
+    AvailableWorkerThreads INT,
+    WorkersWaitingForCPU INT,
+    RequestsWaitingForThreads INT,
+    TotalAssociatedWorkers INT,
+    CPUUtilization VARCHAR(50)
+);
+
+
+DECLARE @max INT;
+DECLARE @sql_cpu INT;
+DECLARE @system_idle INT;
+DECLARE @cpu_utilization VARCHAR(50);
+
+SELECT @max = max_workers_count FROM sys.dm_os_sys_info;
+
+SELECT 
+    @sql_cpu = CAST(record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'INT') AS INT),
+    @system_idle = CAST(record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'INT') AS INT)
+FROM 
+    (SELECT TOP 1 
+        CONVERT(XML, record) AS record
+     FROM 
+        sys.dm_os_ring_buffers 
+     WHERE 
+        ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+     ORDER BY 
+        timestamp DESC) AS ring_buffer_data;
+
+-- Calculate CPU utilization
+SET @cpu_utilization = CONCAT('SQL ', @sql_cpu, '%, OtherProcess ', 100 - @sql_cpu - @system_idle, '%');
+
+-- Insert data into the monitoring table
+INSERT INTO WorkerThreadMonitoring (
+    MonitorTime,
+    TotalWorkerThreads,
+    ActiveWorkerThreads,
+    AvailableWorkerThreads,
+    WorkersWaitingForCPU,
+    RequestsWaitingForThreads,
+    TotalAssociatedWorkers,
+    CPUUtilization
+)
+SELECT 
+    GETDATE() AS MonitorTime,
+    @max AS TotalWorkerThreads,
+    SUM(active_workers_count) AS ActiveWorkerThreads,
+    @max - SUM(active_workers_count) AS AvailableWorkerThreads,
+    SUM(runnable_tasks_count) AS WorkersWaitingForCPU,
+    SUM(work_queue_count) AS RequestsWaitingForThreads,
+    SUM(current_workers_count) AS TotalAssociatedWorkers,
+    @cpu_utilization AS CPUUtilization
+FROM 
+    sys.dm_os_schedulers 
+WHERE 
+    status = 'VISIBLE ONLINE';

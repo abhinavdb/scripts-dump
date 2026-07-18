@@ -1,0 +1,14 @@
+use this for DBATools otherwise it will not work
+Set-DbatoolsConfig -FullName sql.connection.trustcert -Value $true -Register
+Set-DbatoolsConfig -FullName sql.connection.encrypt -Value $false -Register
+
+
+
+sqlpackage --How to USE
+
+download MSI file and use it
+https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-download?view=sql-server-ver16
+
+
+cd "C:\Program Files\Microsoft SQL Server\160\DAC\bin"
+.\sqlpackage /Action:Extract /SourceDatabaseName:"DBATools" /SourceServerName:WIN-8SJJBD42KUF /TargetFile:"E:\Abhinav_DBA\MyDatabase.dacpac" /SourceTrustServerCertificate:True 

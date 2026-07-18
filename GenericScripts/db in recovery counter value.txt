@@ -1,0 +1,3 @@
+SELECT * FROM sys.dm_os_performance_counters
+where  [counter_name] = 'Log remaining for undo' AND
+ [instance_name] LIKE '%SFDC_ETL%'

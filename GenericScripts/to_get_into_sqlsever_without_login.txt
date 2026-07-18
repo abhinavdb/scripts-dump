@@ -1,0 +1,7 @@
+SQLCMD -S QCSWNDWAD001\SOLARWINDS_ORION
+
+create login test with password ='test@1234'
+GO
+
+EXEC master..sp_addsrvrolemember @loginame = N'test', @rolename = N'sysadmin'
+GO

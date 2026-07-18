@@ -1,0 +1,46 @@
+For MS SQL Server 2012 and above
+
+USE [master];
+
+DECLARE @kill varchar(8000) = '';  
+SELECT @kill = @kill + 'kill ' + CONVERT(varchar(5), session_id) + ';'  
+FROM sys.dm_exec_sessions
+WHERE database_id  = db_id('MyDB')
+
+EXEC(@kill);
+GO
+
+
+For MS SQL Server 2000, 2005, 2008
+
+USE master;
+
+DECLARE @kill varchar(8000); SET @kill = '';  
+SELECT @kill = @kill + 'kill ' + CONVERT(varchar(5), spid) + ';'  
+FROM master..sysprocesses  
+WHERE dbid = db_id('MyDB')
+
+EXEC(@kill); 
+GO
+-- KILL sleeping session more than 24 hours
+
+DECLARE @user_spid INT
+DECLARE CurSPID CURSOR FAST_FORWARD
+FOR
+SELECT SPID
+FROM master.dbo.sysprocesses (NOLOCK)
+WHERE spid>50 -- avoid system threads
+AND status='sleeping' -- only sleeping threads
+AND DATEDIFF(HOUR,last_batch,GETDATE())>=24 -- thread sleeping for 24 hours
+AND spid<>@@spid -- ignore current spid
+OPEN CurSPID
+FETCH NEXT FROM CurSPID INTO @user_spid
+WHILE (@@FETCH_STATUS=0)
+BEGIN
+PRINT 'Killing '+CONVERT(VARCHAR,@user_spid)
+EXEC('KILL '+@user_spid)
+FETCH NEXT FROM CurSPID INTO @user_spid
+END
+CLOSE CurSPID
+DEALLOCATE CurSPID
+GO

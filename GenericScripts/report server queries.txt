@@ -1,0 +1,101 @@
+SELECT TOP 100 * FROM ExecutionLog2
+where ReportPath like '%DI00004%' -- put report name here
+ORDER BY TimeStart DESC 
+
+SELECT TOP 100 * FROM ExecutionLog2
+where ReportPath like '%EE00051A%' -- put report name here
+ORDER BY TimeStart DESC 
+
+
+
+use ReportServer2k8
+go
+
+ SELECT S.ScheduleID AS SQLAgent_Job_Name
+      , SUB.Description AS Sub_Desc
+      , SUB.DeliveryExtension AS Sub_Del_Extension
+      , C.Name AS ReportName
+      , C.Path AS ReportPath
+ FROM ReportSchedule RS JOIN Schedule S ON RS.ScheduleID = S.ScheduleID
+      JOIN Subscriptions SUB ON RS.SubscriptionID = SUB.SubscriptionID
+      JOIN Catalog C ON RS.ReportID = C.ItemID AND SUB.Report_OID = C.ItemID
+ WHERE  SUB.Description='Send e-mail to dave.rose@integralife.com'
+
+
+use ReportServer2k8
+go
+select * from dbo.Subscriptions where LastStatus='Pending'
+
+
+
+select * from dbo.Subscriptions
+
+How to check after Restart: 
+
+
+
+1)select * from dbo.Subscriptions where LastStatus='Pending'
+2)
+select * from dbo.Subscriptions where Description=''
+
+SELECT    b.name AS JobName
+            , e.name
+            , e.path
+            , d.description
+            , a.SubscriptionID
+            , laststatus
+            , eventtype
+            , LastRunTime
+            , date_created
+            , date_modified
+FROM  ReportServer2k8.dbo.ReportSchedule   a
+JOIN  msdb.dbo.sysjobs b 
+      ON cast(a.ScheduleID as varchar(255)) = b.name
+JOIN  ReportServer2k8.dbo.ReportSchedule c
+      ON b.name = CAST(c.ScheduleID AS VARCHAR(255))
+JOIN             
+      (select eventtype,laststatus,LastRunTime,d.SubscriptionID,d.description, cast(d.report_oid as varchar(255)) report_oid from  ReportServer2k8.dbo.Subscriptions d  ) d 
+       on c.SubscriptionID = d.SubscriptionID
+JOIN
+      (select e.name, e.path, cast(e.itemid as varchar(255)) itemid from ReportServer2k8.dbo.Catalog e   ) e 
+      on itemid = report_oid where d.SubscriptionID='63948902-5888-4AE9-B4FF-6F5A40A29DC2'--- put subscription here
+
+
+3) Find Job ID and rerun the Job
+
+***************************************************************************************************************************************************
+
+**************************************************************************************************************************************************
+
+Troubleshooting slow report server queries
+
+--Top 10 Large Report by Bytes
+SELECT TOP 10 * FROM ExecutionLog2
+ORDER BY ByteCount DESC
+
+--Top 10 Large Reports by RowCount
+SELECT TOP 10 * FROM ExecutionLog2
+ORDER BY [RowCount] DESC
+
+
+--Top 10 Longest Processing Reports
+SELECT TOP 10 * FROM ExecutionLog2
+ORDER BY TimeProcessing DESC
+
+--Top 10 Longest Rendering Reports
+SELECT TOP 10 * FROM ExecutionLog2
+ORDER BY TimeRendering DESC
+
+
+________________________________________________________________________________________________________________________________________________________
+________________________________________________________________________________________________________________________________________________________
+
+report jobs details
+
+select ScheduleID
+    ,Path
+    ,name
+    ,s.Description
+from ReportServer.dbo.catalog c
+inner join ReportServer.dbo.Subscriptions s on c.ItemID = s.Report_OID
+inner join ReportServer.dbo.ReportSchedule rs on rs.SubscriptionID = s.SubscriptionID

@@ -1,0 +1,4 @@
+SELECT end_time, database_name, sku, storage_in_megabytes 
+FROM sys.resource_usage
+WHERE end_time > DATEADD(dd,-2,SYSDATETIME());
+GO

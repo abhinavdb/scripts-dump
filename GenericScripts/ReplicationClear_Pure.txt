@@ -1,0 +1,85 @@
+USE MySMS;
+GO
+
+-- Remove database replication
+EXEC sp_removedbreplication 'MYSMS';
+GO
+DELETE FROM distribution..MSpublications
+go
+DELETE FROM distribution..MSsubscriptions
+go
+DELETE FROM distribution..MSReplication_Monitordata
+go
+DELETE FROM distribution..MSlogreader_agents
+go
+DELETE FROM distribution..MSarticles
+go
+DELETE FROM distribution..MSdistribution_agents
+go
+DELETE FROM distribution..MSdistribution_history
+go
+DELETE FROM distribution..MSpublication_access
+go
+DELETE FROM distribution..MSpublicationthresholds
+go
+DELETE FROM distribution..MSpublisher_databases
+go
+DELETE FROM distribution..MSqreader_history;
+go
+DELETE FROM distribution..MSreplication_monitordata
+go
+-- Flush replication-related data
+USE MySMS;
+EXEC sp_replflush;
+GO
+
+USE distribution;
+EXEC sp_replflush;
+GO
+
+USE msdb;
+BEGIN TRY
+    DECLARE @JobNameToDelete NVARCHAR(128);
+
+    -- Create the temporary table if it doesn't exist
+    IF OBJECT_ID('tempdb..#JobsToDelete') IS NULL
+    BEGIN
+        CREATE TABLE #JobsToDelete (JobName NVARCHAR(128), JobID UNIQUEIDENTIFIER);
+    END
+
+    -- Insert job names and IDs that match the criteria into the temporary table
+    INSERT INTO #JobsToDelete (JobName, JobID)
+    SELECT j.name AS JobName, j.job_id AS JobID
+    FROM dbo.sysjobs AS j
+    INNER JOIN dbo.syscategories AS c ON j.category_id = c.category_id
+    WHERE c.name LIKE '%REPL%';
+
+    -- Iterate through the job names and delete the jobs one by one
+    DECLARE @CurrentJobName NVARCHAR(128);
+    DECLARE JobCursor CURSOR FOR
+    SELECT JobName FROM #JobsToDelete;
+
+    OPEN JobCursor;
+    FETCH NEXT FROM JobCursor INTO @CurrentJobName;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        -- Delete the current job by name
+        EXECUTE msdb.dbo.sp_delete_job @job_name = @CurrentJobName;
+
+        FETCH NEXT FROM JobCursor INTO @CurrentJobName;
+    END;
+
+    CLOSE JobCursor;
+    DEALLOCATE JobCursor;
+
+    -- Drop the temporary table at the end
+    DROP TABLE #JobsToDelete;
+END TRY
+BEGIN CATCH
+    -- Handle any errors that might occur
+    PRINT 'An error occurred: ' + ERROR_MESSAGE();
+END CATCH;
+
+
+

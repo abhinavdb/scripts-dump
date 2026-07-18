@@ -1,0 +1,61 @@
+Start Azure data studio using Administrator and TDE certificate will not become issue
+
+https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/tde-certificate-migrate?view=azuresql&tabs=azure-powershell
+---------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------
+
+Migrate TDE certificate to MI**************************
+
+from the link download only Step 2: install SDK file and install it
+https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk
+
+https://learn.microsoft.com/en-us/azure/azure-sql/managed-instance/tde-certificate-migrate?view=azuresql&tabs=azure-powershell
+
+convert the certificate using below PS command to pfx file
+
+you can find the converter at below location
+
+PS C:\Windows\system32> cd "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64"
+
+PS C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64> .\pvk2pfx -pvk F:/newtdebackup/MyServerCert.pvk  -spc F:/newtdebackup/MyServerCert.cer -pfx F:/newtdebackup/MyServerCert.pfx
+
+NOw a popup will come to put password which we used in certificate backup script
+
+-------------------------------------------------------------
+This script used to backup certificate
+
+USE master
+GO
+BACKUP CERTIFICATE MyServerCert
+TO FILE = 'F:\newtdebackup\MyServerCert.cer'
+WITH PRIVATE KEY (
+  FILE = 'F:\newtdebackup\MyServerCert.pvk',
+  ENCRYPTION BY PASSWORD = '*Lm_s$$15_1234')
+----------------------------------------------------------------------------------
+open powershell again
+Install-Module -Name Az.Sql
+Update-Module -Name Az.Sql
+
+after that
+Import-Module Az
+# connect to Azure with an interactive dialog for sign-in
+Connect-AzAccount
+# list subscriptions available and copy id of the subscription target the managed instance belongs to
+Get-AzSubscription
+
+then pass account ID and PAss
+
+Select-AzSubscription 413044d3-3317-46da-a4b7-5ae90c4dabd4 --subscription ID
+
+-- then run the below powershell to migrate
+
+# If you are using PowerShell 6.0 or higher, run this command:
+#$fileContentBytes = Get-Content 'C:/full_path/TDE_Cert.pfx' -AsByteStream
+# If you are using PowerShell 5.x, uncomment and run this command instead of the one above:
+$fileContentBytes = Get-Content 'F:/newtdebackup/MyServerCert.pfx' -Encoding Byte
+$base64EncodedCert = [System.Convert]::ToBase64String($fileContentBytes)
+$securePrivateBlob = $base64EncodedCert  | ConvertTo-SecureString -AsPlainText -Force
+$password = "Lm_s$$15_123"
+$securePassword = $password | ConvertTo-SecureString -AsPlainText -Force
+Add-AzSqlManagedInstanceTransparentDataEncryptionCertificate -ResourceGroupName "SQL-HA-RG-eastus" `
+    -ManagedInstanceName "pahlamanagedinstance" -PrivateBlob $securePrivateBlob -Password $securePassword

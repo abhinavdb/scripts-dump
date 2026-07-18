@@ -1,0 +1,104 @@
+# Azure Storage account and container details
+$storageAccountName = 'backupfullltrcontainer'
+$containerName = 'backupltrfull'
+$containerFolderPath = 'aznetpocdbs01/MySMS/FULL/'
+
+# SQL Server details
+$sqlServerInstance = 'WIN-8SJJBD42KUF' # Replace with your SQL Server instance name
+$databaseName = 'MySMS'
+
+# SAS token
+$sasToken = 'sp=racwdli&st=2023-11-10T15:10:33Z&se=2026-12-30T23:10:33Z&spr=https&sv=2022-11-02&sr=c&sig=WL9SBvsj%2FPhhvs8rkRGmUOdjCr72g0eYj6C8hqOU7mc%3D'
+
+# Create the Blob Storage context
+$storageContext = New-AzStorageContext -StorageAccountName $storageAccountName -SasToken $sasToken
+
+# Retrieve blobs in the specified path
+$blobs = Get-AzStorageBlob -Container $containerName -Context $storageContext | Where-Object { $_.Name -like "$containerFolderPath*" }
+
+# Find the latest backup file
+$latestBackup = $blobs | Sort-Object LastModified -Descending | Select-Object -First 1 -ExpandProperty Name
+
+# Construct the full URL for the latest backup file
+$latestBackupUrl = "https://$storageAccountName.blob.core.windows.net/$containerName/$latestBackup"
+
+# T-SQL command to restore the database
+$restoreCommand = @"
+DROP DATABASE IF EXISTS [$databaseName];
+RESTORE DATABASE [$databaseName]
+FROM URL = '$latestBackupUrl'
+WITH MOVE 'MySMS' TO 'D:\MySMS\MySMS.mdf',
+     MOVE 'MySMS_log' TO 'D:\MySMS\MySMS_log.ldf',
+     MOVE 'MySMS1' TO 'D:\MySMS\MySMS1.ndf',
+     MOVE 'MySMS2' TO 'D:\MySMS\MySMS2.ndf',
+     MOVE 'MySMS3' TO 'D:\MySMS\MySMS3.ndf',REPLACE;
+"@
+
+# Execute the restore command on the SQL Server instance
+Invoke-Sqlcmd -ServerInstance $sqlServerInstance -Query $restoreCommand -QueryTimeout 0
+
+
+
+
+****************************** WITH DIFF******************************************************************************
+
+# Azure Storage account and container details
+$storageAccountName = 'backupfullltrcontainer'
+$containerName = 'backupltrfull'
+$containerFolderPathFull = 'aznetpocdbs01/MySMS/FULL/'
+$containerFolderPathDiff = 'aznetpocdbs01/MySMS/DIFF/'
+
+# SQL Server details
+$sqlServerInstance = 'WIN-8SJJBD42KUF' # Replace with your SQL Server instance name
+$databaseName = 'MySMS'
+
+# SAS token
+$sasToken = 'sp=racwdli&st=2023-11-10T15:10:33Z&se=2026-12-30T23:10:33Z&spr=https&sv=2022-11-02&sr=c&sig=WL9SBvsj%2FPhhvs8rkRGmUOdjCr72g0eYj6C8hqOU7mc%3D'
+
+# Create the Blob Storage context
+$storageContext = New-AzStorageContext -StorageAccountName $storageAccountName -SasToken $sasToken
+
+# Retrieve full backup blobs
+$blobsFull = Get-AzStorageBlob -Container $containerName -Context $storageContext | Where-Object { $_.Name -like "$containerFolderPathFull*" }
+
+# Find the latest full backup file
+$latestFullBackup = $blobsFull | Sort-Object LastModified -Descending | Select-Object -First 1 -ExpandProperty Name
+
+# Construct the full URL for the latest full backup file
+$latestFullBackupUrl = "https://$storageAccountName.blob.core.windows.net/$containerName/$latestFullBackup"
+Write-Host "Full Backup URL: $latestFullBackupUrl"
+
+# Retrieve differential backup blobs
+$diffBlobs = Get-AzStorageBlob -Container $containerName -Context $storageContext | Where-Object { $_.Name -like "$containerFolderPathDiff*" }
+
+# Find the latest differential backup file
+$latestDiffBackup = $diffBlobs | Sort-Object LastModified -Descending | Select-Object -First 1 -ExpandProperty Name
+
+# Construct the full URL for the latest differential backup file
+$latestDiffBackupUrl = "https://$storageAccountName.blob.core.windows.net/$containerName/$latestDiffBackup"
+Write-Host "Differential Backup URL: $latestDiffBackupUrl"
+
+# Restore the full backup in nonrecovery mode
+$restoreFullCommand = @"
+DROP DATABASE IF EXISTS [$databaseName];
+RESTORE DATABASE [$databaseName]
+FROM URL = '$latestFullBackupUrl'
+WITH MOVE 'MySMS' TO 'D:\MySMS\MySMS.mdf',
+     MOVE 'MySMS_log' TO 'D:\MySMS\MySMS_log.ldf',
+     MOVE 'MySMS1' TO 'D:\MySMS\MySMS1.ndf',
+     MOVE 'MySMS2' TO 'D:\MySMS\MySMS2.ndf',
+     MOVE 'MySMS3' TO 'D:\MySMS\MySMS3.ndf',
+     NORECOVERY, REPLACE;
+"@
+Invoke-Sqlcmd -ServerInstance $sqlServerInstance -Query $restoreFullCommand -QueryTimeout 0
+
+# T-SQL command to restore the differential backup
+$restoreDiffCommand = @"
+RESTORE DATABASE [$databaseName]
+FROM URL = '$latestDiffBackupUrl'
+WITH RECOVERY;
+"@
+
+# Execute the differential restore command on the SQL Server instance
+Invoke-Sqlcmd -ServerInstance $sqlServerInstance -Query $restoreDiffCommand -QueryTimeout 0
+

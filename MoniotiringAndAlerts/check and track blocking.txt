@@ -1,0 +1,426 @@
+1 ) CREATE DATABASE [DBAUtility]
+
+2) -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [DBAUtility]
+GO
+
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[TrackBlockingSessions](
+	[ID] [bigint] IDENTITY(1,1) NOT NULL,
+	[spid] [smallint] NULL,
+	[hostname] [varchar](256) NULL,
+	[database] [varchar](256) NULL,
+	[program_name] [varchar](256) NULL,
+	[loginame] [varchar](256) NULL,
+	[login_time] [varchar](20) NULL,
+	[last_batch] [varchar](20) NULL,
+	[cmd] [varchar](52) NULL,
+	[Block] [varchar](20) NULL,
+	[BlockingTSQL] [nvarchar](max) NULL,
+	[PostedDate] [datetime] NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[TrackBlockingSessions] ADD  DEFAULT (getdate()) FOR [PostedDate]
+GO
+
+3) -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [DBAUtility]
+GO
+
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[TrackLocksDuringBlocking](
+	[ID] [bigint] IDENTITY(1,1) NOT NULL,
+	[isolation_level] [varchar](40) NULL,
+	[resource_type] [nvarchar](60) NULL,
+	[resource_database_id] [int] NULL,
+	[resource_associated_entity_id] [bigint] NULL,
+	[request_mode] [nvarchar](60) NULL,
+	[request_session_id] [int] NULL,
+	[blocking_session_id] [smallint] NULL,
+	[object name] [sysname] NULL,
+	[object descr] [nvarchar](60) NULL,
+	[partition id] [bigint] NULL,
+	[partition/page rows] [bigint] NULL,
+	[index descr] [nvarchar](60) NULL,
+	[index/page container_id] [bigint] NULL,
+	[PostedDate] [datetime] NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[TrackLocksDuringBlocking] ADD  DEFAULT (getdate()) FOR [PostedDate]
+GO
+
+4) -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE [DBAUtility]
+GO
+
+/****** Object:  StoredProcedure [dbo].[CheckandTrackBlockingSessions]    Script Date: 11/5/2020 2:40:58 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dbo].[CheckandTrackBlockingSessions]
+(
+	@recipients varchar(max) = 
+		'abc@abc.com;abc@abc.com'
+)
+AS
+
+SET NOCOUNT ON
+declare @firstquery NVARCHAR(MAX)
+declare @secondquery NVARCHAR(MAX)
+declare @copyquery NVARCHAR(MAX)
+declare @tableHTML  NVARCHAR(MAX)
+declare @PostedDate datetime
+declare @dbid smallint 
+declare @databasename VARCHAR(256)
+declare @databaselist VARCHAR(2000)
+declare @dbsInscope table (
+	[dbid] smallint NULL, 
+	[database] VARCHAR(256) NULL,
+	completed bit )
+declare @profile_name sysname = NULL
+declare @subject nvarchar(4000)
+
+declare @BlockingSessions table (
+	[spid] smallint NULL,
+	[hostname] VARCHAR(256) NULL,
+	[dbid] smallint NULL, 
+	[database] VARCHAR(256) NULL,
+	[program_name] VARCHAR(256) NULL,
+	[loginame] VARCHAR(256) NULL,
+	[login_time] VARCHAR(20) NULL,
+	[last_batch] VARCHAR(20) NULL, 
+	[cmd] VARCHAR(52) NULL,
+	[Block] VARCHAR(20) NULL,
+	[BlockedBy] smallint NULL,
+	[sql_handle] binary(20) NULL,
+	[BlockingTSQL] NVARCHAR(MAX) NULL,
+	[PostedDate] datetime NOT NULL )
+declare @LocksDuringBlocking table (
+	[isolation_level] VARCHAR(40) NULL,
+	[resource_type] NVARCHAR(60) NULL,
+	[resource_database_id] int NULL,
+	[resource_associated_entity_id] bigint NULL,
+	[request_mode] NVARCHAR(60) NULL,
+	[request_session_id] int NULL,
+	[blocking_session_id] smallint NULL,
+	[object name] sysname NULL,
+	[object descr] NVARCHAR(60) NULL,
+	[partition id] bigint NULL,
+	[partition/page rows] bigint NULL,
+	[index descr] NVARCHAR(60) NULL,
+	[index/page container_id] bigint NULL,
+	[PostedDate] datetime NOT NULL )
+
+set @firstquery = 
+	N'SELECT DISTINCT 
+		s.spid, RTRIM(s.hostname), s.[dbid], RTRIM(d.[name]) AS [database], RTRIM(s.[program_name]), RTRIM(s.loginame), 
+		CAST(s.login_time AS VARCHAR(20)) as login_time , CAST(s.last_batch AS VARCHAR(20)) as last_batch , 
+		s.cmd, ''Blocking'' as Block, NULL
+		,s.[sql_handle]
+		,@PostedDate as PostedDate
+	FROM sys.sysprocesses s WITH(NOLOCK) JOIN sys.sysprocesses s1 WITH(NOLOCK) ON s.spid = s1.blocked
+	JOIN sys.sysdatabases d WITH(NOLOCK) ON s.dbid = d.dbid 
+	WHERE s.blocked = 0
+	UNION
+	SELECT DISTINCT
+		s2.spid, RTRIM(s2.hostname), d1.[dbid], RTRIM(d1.[name]) AS [database], RTRIM(s2.[program_name]), RTRIM(s2.loginame), 
+		CAST(s2.login_time AS VARCHAR(20)) as login_time , CAST(s2.last_batch AS VARCHAR(20)) as last_batch , 
+		s2.cmd, ''Blocked by '' + CAST(s2.blocked AS VARCHAR(3)) as Block, s2.blocked
+		,s2.[sql_handle]
+		,@PostedDate as PostedDate
+	FROM sys.sysprocesses s2 WITH(NOLOCK) 
+	JOIN sys.sysdatabases d1 WITH(NOLOCK) ON s2.dbid = d1.dbid 
+	WHERE s2.blocked > 0
+	'
+set @secondquery = 
+	N'use <<<<dbname>>>>;
+	SELECT DISTINCT
+		case 
+		when e1.transaction_isolation_level = 1 then ''ReadUncomitted''
+		when e1.transaction_isolation_level = 2 then ''ReadCommitted''
+		when e1.transaction_isolation_level = 3 then ''Repeatable''
+		when e1.transaction_isolation_level = 4 then ''Serializable''
+		when e1.transaction_isolation_level = 5 then ''Snapshot''
+		end as [isolation_level],
+		t1.resource_type, 
+		t1.resource_database_id, 
+		t1.resource_associated_entity_id, 
+		t1.request_mode, 
+		t1.request_session_id, 
+		t2.blocking_session_id, 
+		COALESCE(o1.name,OBJECT_NAME(p1.object_id)) ''object name'', 
+		COALESCE(o1.type_desc,(select type_desc from sys.objects where object_id = p1.object_id or object_id = o1.object_id)) ''object descr'', 
+		p1.partition_id ''partition id'', 
+		p1.rows ''partition/page rows'', 
+		a1.type_desc ''index descr'', 
+		a1.container_id ''index/page container_id''
+		,@PostedDate as PostedDate
+	FROM sys.dm_tran_locks as t1 
+	INNER JOIN sys.dm_os_waiting_tasks as t2 ON t1.lock_owner_address = t2.resource_address 
+	LEFT OUTER JOIN [<<<<dbname>>>>].sys.objects o1 on o1.object_id = t1.resource_associated_entity_id
+	LEFT OUTER JOIN [<<<<dbname>>>>].sys.partitions p1 on p1.hobt_id = t1.resource_associated_entity_id 
+	LEFT OUTER JOIN [<<<<dbname>>>>].sys.allocation_units a1 on a1.allocation_unit_id = t1.resource_associated_entity_id 
+	LEFT OUTER JOIN sys.dm_exec_sessions e1 on t1.request_session_id = e1.session_id
+	WHERE t1.resource_database_id = @dbid;
+	'
+
+IF (SELECT top 1 blocked from sys.sysprocesses where blocked !=0 AND DATEDIFF(SECOND, login_time, GETDATE()) > 5) > 0
+   BEGIN
+   DECLARE @blockingSPID TABLE(blocked SMALLINT)
+   INSERT INTO @blockingSPID SELECT blocked FROM sys.sysprocesses WHERE blocked !=0
+
+   WAITFOR DELAY '00:02:30'
+
+   IF EXISTS (SELECT DISTINCT blocked FROM sys.sysprocesses WHERE blocked IN (SELECT DISTINCT blocked FROM @blockingSPID))
+      BEGIN
+		SET @PostedDate = GETDATE();
+		
+		-- one time only run to capture blocking info
+		INSERT INTO @BlockingSessions 
+			([spid],[hostname],[dbid],[database],[program_name],[loginame],[login_time],[last_batch],[cmd],[Block],[BlockedBy],[sql_handle],[PostedDate])
+			EXECUTE sp_executesql @firstquery,N'@PostedDate datetime',@PostedDate = @PostedDate;
+
+		-- ADJUSTMENTS for spurious results
+		-- DELETE any blocker without associated blocked spid; that is, there is no proof of blocking
+		DELETE @BlockingSessions
+			WHERE [Block] = 'Blocking'
+			AND [spid] NOT IN (SELECT DISTINCT [BlockedBy] FROM @BlockingSessions WHERE [Block] LIKE 'Blocked by %');
+		-- DELETE any blocked by spid without the associated blocking information; useless! -- rely on next session refresh
+		DELETE @BlockingSessions
+			WHERE [Block] LIKE 'Blocked by %'
+			AND [BlockedBy] NOT IN (SELECT DISTINCT [spid] FROM @BlockingSessions WHERE [Block] = 'Blocking');
+		-- DELETE all blockers blocking themselves, but only blocking themselves and not associated with any other blocking
+		DELETE @BlockingSessions
+			-- main condition are blockers blocking themselves, ...
+			WHERE [spid] IN (SELECT DISTINCT [spid] FROM @BlockingSessions WHERE [Block] LIKE 'Blocked by %' AND [spid] = [BlockedBy])
+			-- but exclude those associated with other legitimate blocking (ie, blocked spids), ...
+			AND [spid] NOT IN (SELECT DISTINCT [BlockedBy] FROM @BlockingSessions WHERE [Block] LIKE 'Blocked by %' AND [spid] <> [BlockedBy])
+			-- and ensure only blocking/blockedby themselves
+			AND [spid] NOT IN
+				(SELECT bs2.[spid]
+				FROM @BlockingSessions bs1
+				JOIN @BlockingSessions bs2
+					ON bs1.[spid] <> bs2.[spid]
+					AND bs1.[spid] = bs2.[BlockedBy]
+					AND bs1.[Block] = 'Blocking' 
+					AND bs2.[Block] LIKE 'Blocked by %');
+		-- FINAL, check after adjustments; if not suitable, RETURN now, and check on next run schedule
+		IF NOT EXISTS (SELECT NULL FROM @BlockingSessions) -- empty list 
+		OR NOT EXISTS (SELECT NULL FROM @BlockingSessions WHERE [Block] = 'Blocking') -- no blockers
+		-- -- no longer useful if only blockers but nothing blocked!
+		OR (EXISTS (SELECT NULL FROM @BlockingSessions WHERE [Block] = 'Blocking')
+			AND NOT EXISTS (SELECT NULL FROM @BlockingSessions WHERE [Block] LIKE 'Blocked by %'))
+			RETURN;
+
+
+		-- capture query text for lead blockers
+		UPDATE bsns
+			SET bsns.[BlockingTSQL] = CAST(dmesqlt.[text] AS NVARCHAR(MAX))
+		FROM @BlockingSessions bsns
+		CROSS APPLY sys.dm_exec_sql_text(bsns.sql_handle) AS dmesqlt
+		WHERE bsns.[Block] = 'Blocking'
+
+
+		-- determine databases in-scope for this blocking session, and use to resolve object properties for locks
+		INSERT INTO @dbsInscope SELECT DISTINCT [dbid],[database],0 FROM @BlockingSessions WHERE [dbid] IS NOT NULL;
+		WHILE EXISTS (Select NULL from @dbsInscope Where completed = 0)
+			Begin
+			Select TOP(1) @dbid = [dbid], @databasename = [database]
+			From @dbsInscope
+			Where completed = 0;
+
+			SET @copyquery = @secondquery;
+			SET @copyquery = REPLACE(@copyquery, N'<<<<dbname>>>>', CONVERT(nvarchar,@databasename));
+			--
+			INSERT INTO @LocksDuringBlocking
+				([isolation_level],[resource_type],[resource_database_id],[resource_associated_entity_id],
+				 [request_mode],[request_session_id],[blocking_session_id],[object name],[object descr],
+				 [partition id],[partition/page rows],[index descr],[index/page container_id],[PostedDate])
+				EXECUTE sp_executesql @copyquery,
+					N'@PostedDate datetime, @dbid smallint',
+					@PostedDate = @PostedDate, @dbid = @dbid;
+
+			Update @dbsInscope
+			Set completed = 1
+			Where [dbid] = @dbid 
+			And [database] = @databasename;
+			End;
+
+		-- concat for database list
+		SELECT @databaselist = 
+			COALESCE((SELECT DISTINCT STUFF((Select ','+[database]
+						From @dbsInscope d1
+						For XML PATH('')),1,1,'') )	,'[no list]');
+
+		-- setup the email notication body; header first
+		SET @tableHTML =
+			  N'<html>'
+			+ N'<head>' 
+			+ N'<style>td {border: solid black;border-width: 1px;padding-left:5px;padding-right:5px;padding-top:1px;padding-bottom:1px;font: 11px calibri}</style>'
+			+ N'</head>' 
+			+ N'<body>ALERT! There is blocking on instance '+@@SERVERNAME+' for databases: '+@databaselist
+			+ N'<br>Please look at the server ASAP   (posted date ' +CONVERT(NVARCHAR(19),@PostedDate,100) + ')'
+			+ N'<br>'
+		-- second, if captured blocking sessions, include ... 
+		IF EXISTS (SELECT NULL FROM @BlockingSessions)
+			BEGIN
+			SET @tableHTML = @tableHTML +
+				N'<H5>Blocking Sessions  (note: perm table has lead blocker queries)</H5>' +  
+				N'<table cellpadding=0 cellspacing=0 border=0>' +  
+				N'<col width="500px" />' +
+				N'<tr>' +
+				N'<td bgcolor=#E6E6FA><b>spid</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>hostname</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>database</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>program_name</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>loginame</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>login_time</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>last_batch</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>cmd</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>Block</b></td>' +
+				N'</tr>' +  
+				CAST ( ( 
+					SELECT
+						td=COALESCE(CONVERT(nvarchar(5),[spid]),''),'',td=COALESCE([hostname],''),'',td=COALESCE([database],''),'',
+						td=COALESCE([program_name],''),'',td=COALESCE([loginame],''),'',td=COALESCE([login_time],''),'',
+						td=COALESCE([last_batch],''),'',td=COALESCE([cmd],''),'',td=COALESCE([Block],''),''
+					FROM @BlockingSessions
+					FOR XML PATH('tr'), TYPE   
+				) AS NVARCHAR(MAX) ) +  
+				N'</table>' +
+				N'<br>' ;
+			END
+		-- third, if captured lock info, include ...
+		IF EXISTS (SELECT NULL FROM @LocksDuringBlocking)
+			BEGIN
+			SET @tableHTML = @tableHTML +
+				N'<H5>Locks during Blocking</H5>' +  
+				N'<table cellpadding=0 cellspacing=0 border=0>' +  
+				N'<col width="500px" />' +
+				N'<tr>' +
+				N'<td bgcolor=#E6E6FA><b>isolation_level</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>resource_type</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>resource_database_id</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>resource_associated_entity_id</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>request_mode</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>request_session_id</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>blocking_session_id</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>object name</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>object descr</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>partition id</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>partition/page rows</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>index descr</b></td>' +
+				N'<td bgcolor=#E6E6FA><b>index/page container_id</b></td>' +
+				N'</tr>' +  
+				CAST ( ( 
+					SELECT 
+						td=COALESCE([isolation_level],''),'',td=COALESCE([resource_type],''),'',
+						td=COALESCE([resource_database_id],''),'',td=COALESCE([resource_associated_entity_id],''),'',
+						td=COALESCE([request_mode],''),'',td=COALESCE([request_session_id],''),'',
+						td=COALESCE([blocking_session_id],''),'',td=COALESCE([object name],''),'',
+						td=COALESCE([object descr],''),'',td=COALESCE([partition id],''),'',
+						td=COALESCE([partition/page rows],''),'',td=COALESCE([index descr],''),'',
+						td=COALESCE([index/page container_id],''),''
+					FROM @LocksDuringBlocking
+					FOR XML PATH('tr'), TYPE   
+				) AS NVARCHAR(MAX) ) +  
+				N'</table>' +
+				N'<br>' ;
+			END
+		-- last, cap the end of email body & html page
+		SET @tableHTML = @tableHTML + N'</body>' + N'</html>'
+
+		-- retrieve profile name for notification email
+		SELECT TOP(1) @profile_name = p.name
+			FROM msdb.dbo.sysmail_profile p 
+			LEFT OUTER JOIN msdb.dbo.sysmail_principalprofile pp ON pp.profile_id = p.profile_id
+			WHERE pp.profile_id IS NULL OR pp.principal_sid = 0x00 OR SUSER_SNAME(pp.principal_sid) = SUSER_SNAME()
+			ORDER BY 
+				CASE
+					WHEN @@SERVERNAME LIKE ('%'+p.name+'%') THEN 1				-- profiles specifically named after server/instance
+					WHEN pp.principal_sid = 0x00 AND pp.is_default = 1 THEN 2	-- default public profile
+					WHEN pp.principal_sid = 0x00 THEN 3							-- other public profiles
+					WHEN pp.principal_sid IS NULL THEN 4							-- disabled profile, but still a public profile
+					WHEN pp.principal_sid <> 0x00 AND SUSER_SNAME(principal_sid) = SUSER_SNAME() THEN 5	-- private profile and same as the calling user
+				END, p.name;
+
+		-- setup and then send email notification
+		IF @profile_name IS NOT NULL
+		BEGIN
+		SET @subject = SUBSTRING((@@SERVERNAME + ' - !!ALERT!! - Blocking for databases: ' + @databaselist),1,255) -- length for dbmail subject line
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile_name,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,  
+			@body_format = 'HTML' ; 
+		END;
+
+		-- capture results to perm tables
+		INSERT INTO [dbo].[TrackBlockingSessions]
+			([spid],[hostname],[database],[program_name],[loginame],[login_time],[last_batch],[cmd],[Block],[BlockingTSQL],[PostedDate])
+			SELECT [spid],[hostname],[database],[program_name],[loginame],[login_time],[last_batch],[cmd],[Block],[BlockingTSQL],[PostedDate]
+			FROM @BlockingSessions ;
+		INSERT INTO [dbo].[TrackLocksDuringBlocking]
+			([isolation_level],[resource_type],[resource_database_id],[resource_associated_entity_id],
+			 [request_mode],[request_session_id],[blocking_session_id],[object name],[object descr],
+			 [partition id],[partition/page rows],[index descr],[index/page container_id],[PostedDate])
+			SELECT [isolation_level],[resource_type],[resource_database_id],[resource_associated_entity_id],
+				 [request_mode],[request_session_id],[blocking_session_id],[object name],[object descr],
+				 [partition id],[partition/page rows],[index descr],[index/page container_id],[PostedDate]
+			FROM @LocksDuringBlocking ;
+
+      END
+   END
+
+FINI:
+GO
+
+5) -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+create SQL job with below commands
+---------------------------------------------------
+Step 1 :EXEC [dbo].[CheckandTrackBlockingSessions] 
+
+Step 2 : purge old records,60 days
+
+DELETE [dbo].[TrackBlockingSessions]
+WHERE PostedDate < DATEADD(DAY,-60,GETDATE()) ;
+DELETE [dbo].[TrackLocksDuringBlocking]
+WHERE PostedDate < DATEADD(DAY,-60,GETDATE()) ;
+
+----------------------------------------------------
+To check which object blocked mostly
+  SELECT [object name], COUNT(*) 
+FROM [DBAUtility].[dbo].[TrackLocksDuringBlocking]
+GROUP BY [object name]
+ORDER BY [object name] ASC
+
+

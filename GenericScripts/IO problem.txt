@@ -1,0 +1,50 @@
+
+-- Check Current sesion Wait types along with history of Wait types- sys.dm_os_wait_stats
+SELECT r.session_id, r.wait_type, r.wait_time as wait_time_ms
+                                       FROM sys.dm_exec_requests r JOIN sys.dm_exec_sessions s
+                                        ON r.session_id = s.session_id
+                                       WHERE wait_type in ('PAGEIOLATCH_SH', 'PAGEIOLATCH_EX', 'WRITELOG', 
+                                        'IO_COMPLETION', 'ASYNC_IO_COMPLETION', 'BACKUPIO')
+                                       AND is_user_process = 1
+									   
+-- Avg Latency 
+SELECT   LEFT(mf.physical_name,100),   
+         ReadLatency = CASE WHEN num_of_reads = 0 THEN 0 ELSE (io_stall_read_ms / num_of_reads) END, 
+         WriteLatency = CASE WHEN num_of_writes = 0 THEN 0 ELSE (io_stall_write_ms / num_of_writes) END, 
+         AvgLatency =  CASE WHEN (num_of_reads = 0 AND num_of_writes = 0) THEN 0 
+                        ELSE (io_stall / (num_of_reads + num_of_writes)) END,
+         LatencyAssessment = CASE WHEN (num_of_reads = 0 AND num_of_writes = 0) THEN 'No data' ELSE 
+               CASE WHEN (io_stall / (num_of_reads + num_of_writes)) < 2 THEN 'Excellent' 
+                    WHEN (io_stall / (num_of_reads + num_of_writes)) BETWEEN 2 AND 5 THEN 'Very good' 
+                    WHEN (io_stall / (num_of_reads + num_of_writes)) BETWEEN 6 AND 15 THEN 'Good' 
+                    WHEN (io_stall / (num_of_reads + num_of_writes)) BETWEEN 16 AND 100 THEN 'Poor' 
+                    WHEN (io_stall / (num_of_reads + num_of_writes)) BETWEEN 100 AND 500 THEN  'Bad' 
+                    ELSE 'Deplorable' END  END, 
+         [Avg KBs/Transfer] =  CASE WHEN (num_of_reads = 0 AND num_of_writes = 0) THEN 0 
+                    ELSE ((([num_of_bytes_read] + [num_of_bytes_written]) / (num_of_reads + num_of_writes)) / 1024) END, 
+         LEFT (mf.physical_name, 2) AS Volume, 
+         LEFT(DB_NAME (vfs.database_id),32) AS [Database Name]
+       FROM sys.dm_io_virtual_file_stats (NULL,NULL) AS vfs  
+       JOIN sys.master_files AS mf ON vfs.database_id = mf.database_id 
+         AND vfs.file_id = mf.file_id 
+       ORDER BY AvgLatency DESC
+
+	   -- Gather Avg Disk Sec/Transfer ---- perfmon --script is ready and in folder
+
+	   If the Performance monitor counters don't report latency, but SQL Server does, then the problem is between SQL Server and the Partition Manager, 
+	   that is, filter drivers. The Partition Manager is an I/O layer where the OS collects Perfmon counters. To address the latency, ensure proper exclusions of
+	    filter drivers and resolve filter driver issues. Filter drivers are used by programs like Anti-virus software, Backup solutions, Encryption, Compression, 
+		and so on. You can use this command to list filter drivers on the systems and the volumes they attach to. 
+	   Then, you can look up the driver names and software vendors in the Allocated filter altitudes article.
+
+	   -- to check SQL server as culprit,  Is SQL Server driving the heavy I/O activity?
+	   -- Check counters uffer Manager: Page Reads/Sec (most common culprit) and Page Writes/Sec (
+	   Tune queries, for example: better indexes, update statistics, rewrite queries, and redesign the database.
+Increase max server memory or add more RAM on the system. More RAM will cache more data or index pages without frequently re-reading from disk, 
+which will reduce I/O activity.
+
+******************************************************************************
+Disk reads/sec + disk writes/sec = IOPS
+
+Disk read bytes/sec + disk write bytes/sec = throughput
+

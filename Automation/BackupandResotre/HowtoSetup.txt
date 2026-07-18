@@ -1,0 +1,8 @@
+Configure SQL Job with below script to backup all databases
+C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe C:\BackupRestoreLog\BackupCopyLog\BackupjobAllDatabase.ps1
+
+
+
+use this for DBATools otherwise it will not work
+Set-DbatoolsConfig -FullName sql.connection.trustcert -Value $true -Register
+Set-DbatoolsConfig -FullName sql.connection.encrypt -Value $false -Register

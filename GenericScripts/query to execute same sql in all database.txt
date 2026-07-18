@@ -1,0 +1,18 @@
+DECLARE @DB_Name varchar(100) 
+DECLARE @Command nvarchar(200) 
+DECLARE database_cursor CURSOR FOR SELECT name FROM MASTER.sys.sysdatabases 
+
+OPEN database_cursor 
+
+FETCH NEXT FROM database_cursor INTO @DB_Name 
+
+WHILE @@FETCH_STATUS = 0 
+BEGIN 
+     SELECT @Command = 'SELECT * FROM sys.dm_db_persisted_sku_features;'   ---- write query in between quotes to execute in all database
+     --EXEC sp_executesql @Command 
+
+     FETCH NEXT FROM database_cursor INTO @DB_Name 
+END 
+
+CLOSE database_cursor 
+DEALLOCATE database_cursor 

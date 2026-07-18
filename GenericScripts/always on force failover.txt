@@ -1,0 +1,21 @@
+-- https://www.mssqltips.com/sqlservertip/4917/recover-wsfc-using-forced-quorum-for-sql-server-alwayson-availability-group/
+
+Step 1: cluster force step is optional if cluster is up then ignore the cluster force failover
+
+do this on the node which is available and up
+C:\>Net stop clussvc
+
+C:\>Net start clussvc /forcequorum
+
+Step 2: Now force failover Always-on to the ndoe is is available and looks healthy
+
+USE master
+GO
+PRINT @@SERVERNAME
+GO
+ALTER AVAILABILITY GROUP AGTest FORCE_FAILOVER_ALLOW_DATA_LOSS;
+GO
+
+
+ALTER DATABASE [AGplaceHolder] SET HADR RESUME;
+GO  

@@ -1,0 +1,140 @@
+
+--https://github.com/AbhinavEragon/DBA
+USE [DBUtility]
+GO
+
+
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE PROCEDURE [dbo].[KillOpenTranSessions]
+(
+	 @DBinScope sysname = 'ALL'			-- database name, or 'ALL' user databases
+	,@HoursSinceLastBatch int = 18		-- hours since "last batch"; positive value, or -1 for *all* old & recent open trans 
+)
+AS
+SET NOCOUNT ON
+declare @productmajorversion int
+declare @SQL nvarchar(max)
+declare @killCmd varchar(max)
+declare @printforLog varchar(max)
+declare @logHeader bit = 0
+
+declare @session_id smallint
+declare @host_name nvarchar(128)
+declare @program_name nvarchar(128)
+declare @database_name nvarchar(256)
+declare @login_time datetime
+declare @login_name nvarchar(128)
+declare @last_request_end_time datetime
+
+declare @opentransessions table (
+	session_id smallint ,
+	host_name nvarchar(128) ,
+	program_name nvarchar(128) ,
+	database_name nvarchar(256) ,
+	login_time datetime ,
+	login_name nvarchar(128) ,
+	last_request_end_time datetime ,
+	completed bit )
+
+SET @productmajorversion = 
+	SUBSTRING( CAST(SERVERPROPERTY('ProductVersion') as nvarchar(128)), 1,
+		CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') as nvarchar(128)),1)-1)
+
+IF @productmajorversion < 11
+SET @SQL = 
+	N'select DISTINCT
+		spid, LTRIM(RTRIM(CONVERT(varchar,hostname))), LTRIM(RTRIM(CONVERT(varchar,program_name))), 
+		LTRIM(RTRIM(CONVERT(varchar,db_name(dbid)))) as database_name, 
+		login_time, LTRIM(RTRIM(CONVERT(varchar,loginame))), last_batch,
+		0
+	from master.sys.sysprocesses
+	where CASE WHEN @DBinScope = ''ALL'' THEN @DBinScope ELSE db_name(dbid) END = @DBinScope 
+	and db_name(dbid) NOT IN (''master'',''model'',''msdb'',''tempdb'',''distribution'',''DBUtility'')
+	and spid in (select session_id from sys.dm_exec_sessions where is_user_process = 1) -- exclude system processes
+	and open_tran = 1
+	and last_batch < 
+			CASE 
+				WHEN @HoursSinceLastBatch = -1 THEN DATEADD(HOUR,0,GETDATE()) 
+				WHEN @HoursSinceLastBatch < -1 THEN DATEADD(HOUR,@HoursSinceLastBatch,GETDATE()) 
+				ELSE DATEADD(HOUR,(-1*@HoursSinceLastBatch),GETDATE()) 
+			END' 
+ELSE
+SET @SQL = 
+	N'select session_id, host_name, program_name, 
+		db_name(database_id) as database_name, 
+		login_time, login_name, last_request_end_time,
+		0
+	from sys.dm_exec_sessions 
+	where CASE WHEN @DBinScope = ''ALL'' THEN @DBinScope ELSE db_name(database_id) END = @DBinScope 
+	and db_name(database_id) NOT IN (''master'',''model'',''msdb'',''tempdb'',''distribution'',''DBUtility'')
+	and is_user_process = 1 -- exclude system processes
+	and open_transaction_count > 0
+	and last_request_end_time < 
+			CASE 
+				WHEN @HoursSinceLastBatch = -1 THEN DATEADD(HOUR,0,GETDATE()) 
+				WHEN @HoursSinceLastBatch < -1 THEN DATEADD(HOUR,@HoursSinceLastBatch,GETDATE()) 
+				ELSE DATEADD(HOUR,(-1*@HoursSinceLastBatch),GETDATE()) 
+			END' ;
+
+INSERT INTO @opentransessions 
+	EXEC sp_executesql @SQL, N'@DBinScope sysname, @HoursSinceLastBatch int', @DBinScope, @HoursSinceLastBatch ;
+
+while exists (select null from @opentransessions where completed = 0)
+	BEGIN
+	SELECT TOP(1)
+		@session_id  = session_id ,
+		@host_name = host_name ,
+		@program_name = program_name ,
+		@database_name = database_name ,
+		@login_time = login_time ,
+		@login_name = login_name ,
+		@last_request_end_time = last_request_end_time
+	FROM @opentransessions
+	WHERE completed = 0;
+
+	--SET @killCmd = 'kill ' + CONVERT(varchar,@session_id) + ';'
+	--EXEC (@killCmd); -- Enable this to KILL the Session, ELSE IT will report what sessions can be killed
+
+	IF @logHeader = 0
+		begin
+		set @logHeader = 1
+		SET @printforLog = 
+			  'Sessions that can be KILLED at '+CONVERT(varchar(100),GETDATE(),100)+';  '
+			+ 'Databases in scope:'+CONVERT(varchar(100),@DBinScope)+', '
+			+ 'Hours since Last Batch:'+ CONVERT(varchar,@HoursSinceLastBatch)
+			+':'
+		PRINT @printforLog ;
+		end
+
+	SET @printforLog = 
+		'   '+CONVERT(nvarchar(5),@session_id)+': '
+		+SUBSTRING(@database_name,1,35)+'|'+SUBSTRING(@host_name,1,35)+'|'+SUBSTRING(@program_name,1,35)
+		+'  ... '
+		+'Login name='+@login_name+',time='+CONVERT(varchar,@login_time,120)
+		+' ... '
+		+'Last batch='+CONVERT(varchar,@last_request_end_time,120)
+	PRINT @printforLog ;
+	
+	UPDATE @opentransessions
+	SET completed = 1
+	WHERE 			
+		session_id = @session_id AND 
+		host_name = @host_name AND 
+		program_name = @program_name AND 
+		database_name = @database_name AND 
+		login_time = @login_time AND 
+		login_name = @login_name AND 
+		last_request_end_time = @last_request_end_time ;
+	END
+
+FINI:
+GO
+
+

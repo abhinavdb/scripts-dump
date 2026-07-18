@@ -1,0 +1,15 @@
+use tempdb
+go
+SELECT
+SUM (user_object_reserved_page_count)*8/1024.0/1024.0 as user_obj_GB,
+SUM (internal_object_reserved_page_count)*8/1024.0/1024.0 as internal_obj_GB,
+SUM (version_store_reserved_page_count)*8/1024.0/1024.0  as version_store_GB,
+SUM (unallocated_extent_page_count)*8/1024.0/1024.0 as freespace_GB,
+SUM (mixed_extent_page_count)*8/1024.0/1024.0 as mixedextent_GB
+FROM sys.dm_db_file_space_usage
+
+--Check the longest running transactions currently using the version store:
+SELECT t.session_id, (select object_name(objectid) from sys.fn_get_sql(p.sql_handle)) as sql, t.elapsed_time_seconds, transaction_id, p.dbid, p.hostname
+FROM sys.dm_tran_active_snapshot_database_transactions t
+JOIN sys.sysprocesses p on t.session_id = p.spid
+ORDER BY t.elapsed_time_seconds DESC; 

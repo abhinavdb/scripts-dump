@@ -1,0 +1,53 @@
+--Prerequisites -- Just do it one time
+Install-Module -Name Az -Force -AllowClobber -Scope AllUsers
+
+
+This script will copy all the indivuals files inside the folder source [F:\SQLBackup\XXXXXX\XXXXXX] to blob, if the source contains sub folder it will fail
+
+-- put this inside PS file
+# Install Azure.Storage module if not already installed
+# Install-Module -Name Az -Force -AllowClobber -Scope CurrentUser
+
+# Replace these variables with your own values
+$storageAccountName = "backupfullltrcontainer"
+$containerName = "backupltrfull"
+$sourceFolderPath = "F:\SQLBackup\XXXXXX\XXXXX"
+$destinationBlobPrefix = "XXXXXXXX" -- put the blob storage container name
+$sasToken = "sp=racwdli&st=2023-11-10T10:57:54Z&se=2025-09-14T18:57:54Z&spr=https&sv=2022-11-02&sr=c&sig=908e5HsP8ftM11pVrXi9TV8Ba%2FvfMJHsyiLqKSYRVCk%3D"
+
+# Import the Azure.Storage module
+Import-Module Az.Storage -Force
+
+# Create a Storage Context with SAS token
+$ctx = New-AzStorageContext -StorageAccountName $storageAccountName -SasToken $sasToken
+
+# Get the list of subdirectories in the source folder
+$sourceSubdirectories = Get-ChildItem -Path $sourceFolderPath -Directory
+
+foreach ($subdirectory in $sourceSubdirectories) {
+    # Get the list of files in the current subdirectory
+    $sourceFiles = Get-ChildItem -Path $subdirectory.FullName
+
+    foreach ($file in $sourceFiles) {
+        # Determine the relative path for the blob
+        $relativePath = $file.FullName.Substring($sourceFolderPath.Length + 1)
+        $blobName = "$destinationBlobPrefix/$relativePath"
+
+        # Check if the blob already exists in Azure Blob Storage
+        try {
+            $blobExists = Get-AzStorageBlob -Container $containerName -Blob $blobName -Context $ctx -ErrorAction Stop
+
+            Write-Host "Blob '$blobName' already exists. Skipping."
+        } catch {
+            # Upload the file to Azure Blob Storage
+            Set-AzStorageBlobContent -Container $containerName -Blob $blobName -File $file.FullName -Context $ctx
+            Write-Host "Uploaded file '$file.FullName' to blob '$blobName'."
+        }
+    }
+}
+
+
+
+
+-- use this to schedule powershell-- save the powershell script and call it via SQL Agent Job
+C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe C:\BackupRestoreLog\BackupCopyLog\RestoreScript.ps1

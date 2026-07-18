@@ -1,0 +1,6 @@
+USE [master]
+GO
+CREATE DATABASE [MySMSTrans] ON 
+( FILENAME = N'H:\MySMSTrans\MySMSTrans.mdf' )
+ FOR ATTACH_FORCE_REBUILD_LOG 
+GO

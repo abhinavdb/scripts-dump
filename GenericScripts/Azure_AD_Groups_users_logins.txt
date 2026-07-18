@@ -1,0 +1,72 @@
+Step 1- Install Azure AD Powershell API
+----------------------------------------------------------------
+Install-Module -Name AzureAD -scope currentuser
+
+Step 2- Install Az
+----------------------------------------------------------------
+
+Install-Module -Name Az -AllowClobber -Scope CurrentUser
+
+Step 3- Run Below powershell to check the AD group users
+----------------------------------------------------------------
+
+# Connect to Azure AD with your credentials
+Connect-AzureAD
+
+# Define the group name
+$groupName = "GDW_GRP_DATAANALYTICS_PRD_DATAANALYST"
+
+# Get the group ID
+$group = Get-AzureADGroup -Filter "DisplayName eq '$groupName'"
+
+# Check if group exists
+if ($group) {
+    # Get the group members
+    $groupMembers = Get-AzureADGroupMember -ObjectId $group.ObjectId -All $true
+
+    # Prepare the output in a table format
+    $groupMembers | Select-Object DisplayName, ObjectId, @{Name='UserType';Expression={$_.ObjectType}} | Format-Table -AutoSize
+} else {
+    Write-Output "Group '$groupName' not found."
+}
+
+
+
+******************************************************************
+If you want to import the Azure AD powershell installationfile from some location
+
+Import-Module "C:\Program Files\WindowsPowerShell\Modules\AzureAD\2.0.2.182\AzureAD.psd1"
+
+ 
+
+ 
+
+# Connect to Azure AD with your credentials
+Connect-AzureAD
+
+ 
+
+# Define the group name
+$groupName = "GDW_GRP_DATAANALYTICS_PRD_DATAANALYST"
+
+ 
+
+# Get the group ID
+$group = Get-AzureADGroup -Filter "DisplayName eq '$groupName'"
+
+ 
+
+# Check if group exists
+if ($group) {
+    # Get the group members
+    $groupMembers = Get-AzureADGroupMember -ObjectId $group.ObjectId -All $true
+
+ 
+
+    # Prepare the output in a table format
+    $groupMembers | Select-Object DisplayName, ObjectId, @{Name='UserType';Expression={$_.ObjectType}} | Format-Table -AutoSize
+} else {
+    Write-Output "Group '$groupName' not found."
+}
+
+ 

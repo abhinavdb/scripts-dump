@@ -1,0 +1,30 @@
+select i.name as indexname, 
+       t.name as tablename
+from   sys.indexes i
+  join sys.tables t on i.object_id = t.object_id
+where  i.type in (5, 6)
+
+
+
+SELECT i.object_id, object_name(i.object_id) AS TableName,   
+i.name AS IndexName, i.index_id, i.type_desc,   
+CSRowGroups.*,   
+100*(total_rows - ISNULL(deleted_rows,0))/total_rows AS PercentFull    
+FROM sys.indexes AS i  
+JOIN sys.column_store_row_groups AS CSRowGroups  
+    ON i.object_id = CSRowGroups.object_id  
+AND i.index_id = CSRowGroups.index_id   
+WHERE object_name(i.object_id) = 'TBL_ET_UserLocationTracking'   
+ORDER BY object_name(i.object_id), i.name, row_group_id;
+
+--when it make sense to create one
+Here's where columnar indexes make sense:
+* Your chief wait type is PAGEIOLATCH (reading data pages from disk)
+* Your tables are very wide (lots of columns)
+* Your report users don't query all of the columns
+* And they sort different columns all the time
+* And we need grouping aggregations
+* And we only load data in batches, like overnight -- This is important due to compression
+* For SQL 2012, where you can afford to rebuild this index nightly
+
+

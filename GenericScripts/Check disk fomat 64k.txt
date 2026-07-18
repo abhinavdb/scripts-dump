@@ -1,0 +1,151 @@
+# SQL Server disk/volume readiness audit (PowerShell 5.1 compatible)
+
+# --- Collect base info ---
+$disks = Get-Disk | Select-Object Number, FriendlyName, LogicalSectorSize, PhysicalSectorSize, IsReadOnly, IsBoot, IsSystem, PartitionStyle
+
+# Map partitions to disk numbers by drive letter and mount path
+$partByLetter = @{}
+$partByPath   = @{}
+Get-Partition | ForEach-Object {
+    $dn = $_.DiskNumber
+    if ($_.DriveLetter) { $partByLetter[$_.DriveLetter.ToString().ToUpper()] = $dn }
+    if ($_.AccessPaths) {
+        foreach ($p in $_.AccessPaths) {
+            if ($p) {
+                $key = $p.TrimEnd('\')
+                $partByPath[$key] = $dn
+            }
+        }
+    }
+}
+
+# Volumes (Fixed only) including allocation unit size
+$vols = Get-CimInstance Win32_Volume -Filter "DriveType=3" |
+  Select-Object DriveLetter, Label, FileSystem, Capacity, FreeSpace, BlockSize, Name, DeviceID
+
+# Dedup availability
+$dedupAvailable = $false
+try {
+    if (Get-Command Get-DedupVolume -ErrorAction Stop) { $dedupAvailable = $true }
+} catch { $dedupAvailable = $false }
+
+function Test-RootCompressed($rootPath) {
+    try {
+        $attr = (Get-Item $rootPath -ErrorAction Stop).Attributes
+        if ($attr -band [IO.FileAttributes]::Compressed) { return $true } else { return $false }
+    } catch { return $false }
+}
+
+$rows = @()
+
+foreach ($v in $vols) {
+    # Display + root path
+    $volDisplay = $null
+    $rootPath   = $null
+    if ($v.DriveLetter) {
+        $volDisplay = "$($v.DriveLetter):"
+        $rootPath   = "$($v.DriveLetter):\"
+    } else {
+        $volDisplay = $v.Name.TrimEnd('\')   # e.g. \\?\Volume{GUID}
+        $rootPath   = $v.Name
+    }
+
+    # Find DiskNumber
+    $diskNum = $null
+    if ($v.DriveLetter) {
+        $key = $v.DriveLetter.ToString().ToUpper()
+        if ($partByLetter.ContainsKey($key)) { $diskNum = $partByLetter[$key] }
+    }
+    if ($diskNum -eq $null) {
+        $pathKey = $v.Name.TrimEnd('\')
+        if ($partByPath.ContainsKey($pathKey)) { $diskNum = $partByPath[$pathKey] }
+    }
+
+    # Sector sizes
+    $dsk = $null
+    if ($diskNum -ne $null) {
+        $dsk = $disks | Where-Object { $_.Number -eq $diskNum } | Select-Object -First 1
+    }
+
+    # Root compression
+    $rootCompressed = $false
+    if ($v.FileSystem -eq 'NTFS' -and $v.DriveLetter) {
+        $rootCompressed = Test-RootCompressed -rootPath $rootPath
+    }
+
+    # Dedup
+    $dedupState = 'Unknown'
+    if ($dedupAvailable -and $v.DriveLetter) {
+        try {
+            $dv = Get-DedupVolume -Volume "$($v.DriveLetter):" -ErrorAction Stop
+            if ($dv) { $dedupState = 'Enabled' } else { $dedupState = 'Disabled' }
+        } catch { $dedupState = 'Disabled' }
+    } elseif (-not $dedupAvailable) {
+        $dedupState = 'Unknown'
+    } else {
+        $dedupState = 'Disabled'
+    }
+
+    # Evaluate issues
+    $issues = @()
+
+    # Filesystem
+    if ($v.FileSystem -ne 'NTFS' -and $v.FileSystem -ne 'ReFS') {
+        $issues += "Unsupported FS ($($v.FileSystem)) – use NTFS (or ReFS on supported SQL/Windows)."
+    }
+
+    # Allocation unit size (cluster size)
+    $aus = $v.BlockSize
+    if ($aus -ne $null) {
+        if ($aus -ne 65536) { $issues += "Allocation unit $([int]($aus/1024))KB – set to 64KB." }
+    } else {
+        if ($v.DriveLetter) {
+            $issues += "Allocation unit unknown – run: fsutil fsinfo ntfsinfo $($v.DriveLetter):"
+        } else {
+            $issues += "Allocation unit unknown on mount-point volume."
+        }
+    }
+
+    # Compression
+    if ($rootCompressed) { $issues += "Root folder is NTFS-compressed – disable compression." }
+
+    # Dedup
+    if ($dedupState -eq 'Enabled') { $issues += "Deduplication enabled – avoid for data/log/tempdb volumes." }
+
+    # Sector sizes
+    if ($dsk -ne $null) {
+        $ls = $dsk.LogicalSectorSize
+        $ps = $dsk.PhysicalSectorSize
+        if ($ls -eq 4096 -and $ps -eq 4096) {
+            $issues += "4Kn disk (Logical 4K) – ensure SQL 2016+ and Windows support, or use 512e EBS."
+        }
+        if ($dsk.IsReadOnly) { $issues += "Disk is ReadOnly – unset for SQL volumes." }
+    }
+
+    $rows += [pscustomobject]@{
+        Volume         = $volDisplay
+        Label          = $v.Label
+        DiskNumber     = $diskNum
+        FileSystem     = $v.FileSystem
+        AllocUnitKB    = if ($aus -ne $null) { [int]($aus/1024) } else { $null }
+        Logical4K      = if ($dsk -ne $null) { ($dsk.LogicalSectorSize -eq 4096) } else { $null }
+        Physical4K     = if ($dsk -ne $null) { ($dsk.PhysicalSectorSize -eq 4096) } else { $null }
+        Dedup          = $dedupState
+        RootCompressed = $rootCompressed
+        CapacityGB     = [math]::Round(($v.Capacity/1GB),2)
+        FreeGB         = [math]::Round(($v.FreeSpace/1GB),2)
+        SQL_Ready      = if ($issues.Count -eq 0) { 'PASS' } else { 'FAIL' }
+        Issues         = if ($issues.Count -gt 0) { ($issues -join ' | ') } else { '' }
+        MountType      = if ($v.DriveLetter) { 'DriveLetter' } else { 'MountPoint/GUID' }
+    }
+}
+
+# Summary table
+$rows | Sort-Object Volume | Format-Table Volume,FileSystem,AllocUnitKB,RootCompressed,Dedup,Logical4K,Physical4K,SQL_Ready,Issues -AutoSize
+
+"`nDetails:`n" | Out-Host
+$rows | Sort-Object Volume | Format-Table Volume,Label,MountType,DiskNumber,CapacityGB,FreeGB -AutoSize
+
+"`nGuidance:`n- For SQL data/log/tempdb/backups: NTFS or ReFS and 64 KB allocation unit, no compression, no dedup (dedup only on backup volumes).`n- Reformatting to 64 KB is destructive; migrate data first.`n- Ensure volumes are on gp3/io2 with adequate IOPS/throughput.`n" | Out-Host
+
+

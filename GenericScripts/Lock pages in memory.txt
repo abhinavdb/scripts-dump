@@ -1,0 +1,13 @@
+--Locked_pages_used_Sqlserver_MB =0, lock pages memory not set
+
+select
+(physical_memory_in_use_kb/1024)Memory_usedby_Sqlserver_MB,
+(locked_page_allocations_kb/1024 )Locked_pages_used_Sqlserver_MB,
+(total_virtual_address_space_kb/1024 )Total_VAS_in_MB,
+process_physical_memory_low,
+process_virtual_memory_low
+from sys.dm_os_process_memory
+
+--IF The memory model currently in use is CONVENTIONAL, which means that LPIM was not granted at the time of server startup.
+SELECT sql_memory_model, sql_memory_model_desc
+FROM sys.dm_os_sys_info;

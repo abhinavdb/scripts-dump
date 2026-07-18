@@ -1,0 +1,25 @@
+--last one hour only
+https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-db-resource-stats-azure-sql-database?view=azuresqldb-current
+
+SELECT * FROM sys.dm_db_resource_stats ORDER BY end_time DESC;
+- check column cpu_limit for available number of CPU in total same as portal
+
+SELECT
+    AVG(avg_cpu_percent) AS 'Average CPU Utilization In Percent',
+    MAX(avg_cpu_percent) AS 'Maximum CPU Utilization In Percent',
+    AVG(avg_data_io_percent) AS 'Average Data IO In Percent',
+    MAX(avg_data_io_percent) AS 'Maximum Data IO In Percent',
+    AVG(avg_log_write_percent) AS 'Average Log Write I/O Throughput Utilization In Percent',
+    MAX(avg_log_write_percent) AS 'Maximum Log Write I/O Throughput Utilization In Percent',
+    AVG(avg_memory_usage_percent) AS 'Average Memory Usage In Percent',
+    MAX(avg_memory_usage_percent) AS 'Maximum Memory Usage In Percent'
+FROM sys.dm_db_resource_stats;
+
+
+-- Query to get CPU and Memory Information
+SELECT 
+    cpu_rate / 100 AS CPU_vCores,  -- Number of vCores
+    CAST(process_memory_limit_mb / 1024.0 AS DECIMAL(9,1)) AS TotalMemoryGB,  -- Total memory in GB
+    CAST(non_sos_mem_gap_mb / 1024.0 AS DECIMAL(9,1)) AS NonSOSMemGapGB,  -- Reserved memory for non-SOS operations
+    CAST((process_memory_limit_mb - non_sos_mem_gap_mb) / 1024.0 AS DECIMAL(9,1)) AS AvailableMemoryGB -- Available memory for SQL Server
+FROM sys.dm_os_job_object;

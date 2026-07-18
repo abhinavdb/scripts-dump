@@ -1,0 +1,69 @@
+$storageAccountName = "backupfullltrcontainer"
+$containerName = "backupltrfull"
+$sourceRootFolder = "F:\SQLBackup\mysmstrans"
+$destinationBlobPrefix = "aznetpocdbs01"
+$sasToken = "sp=racwdli&st=2023-11-10T15:10:33Z&se=2026-12-30T23:10:33Z&spr=https&sv=2022-11-02&sr=c&sig=WL9SBvsj%2FPhhvs8rkRGmUOdjCr72g0eYj6C8hqOU7mc%3D"
+
+# Import the Azure.Storage module
+Import-Module Az.Storage -Force
+
+# Create a Storage Context with SAS token
+$ctx = New-AzStorageContext -StorageAccountName $storageAccountName -SasToken $sasToken
+
+# Function to check if a blob exists in the Azure Storage
+function Blob-Exists {
+    param (
+        [string]$containerName,
+        [string]$blobName
+    )
+
+    try {
+        Get-AzStorageBlob -Container $containerName -Blob $blobName -Context $ctx -ErrorAction Stop
+        $true
+    } catch {
+        $false
+    }
+}
+
+# Function to recursively copy files from source to destination
+function Copy-Files {
+    param (
+        [string]$sourcePath,
+        [string]$destinationPath
+    )
+
+    # Get the list of files in the current source directory
+    $sourceFiles = Get-ChildItem -Path $sourcePath -File
+
+    foreach ($file in $sourceFiles) {
+        # Determine the relative path for the blob
+        $relativePath = $file.FullName.Substring($sourcePath.Length + 1)
+        $blobName = "$destinationPath/$relativePath"
+
+        # Check if the blob already exists in Azure Blob Storage
+        if (Blob-Exists -containerName $containerName -blobName $blobName) {
+            Write-Host "Blob '$blobName' already exists. Skipping."
+        } else {
+            # Upload the file to Azure Blob Storage
+            Set-AzStorageBlobContent -Container $containerName -Blob $blobName -File $file.FullName -Context $ctx
+            Write-Host "Uploaded file '$file.FullName' to blob '$blobName'."
+        }
+    }
+
+    # Recursively copy files from subdirectories
+    $subdirectories = Get-ChildItem -Path $sourcePath -Directory
+    foreach ($subdirectory in $subdirectories) {
+        $relativePath = $subdirectory.FullName.Substring($sourcePath.Length + 1)
+        $destinationSubdirectory = "$destinationPath/$relativePath"
+        Copy-Files -sourcePath $subdirectory.FullName -destinationPath $destinationSubdirectory
+    }
+}
+
+# Main loop to create main folders and copy files
+$mainFolders = Get-ChildItem -Path $sourceRootFolder -Directory
+
+foreach ($mainFolder in $mainFolders) {
+    $mainFolderName = $mainFolder.Name
+    $destinationMainFolder = "$destinationBlobPrefix/$mainFolderName"
+    Copy-Files -sourcePath $mainFolder.FullName -destinationPath $destinationMainFolder
+}

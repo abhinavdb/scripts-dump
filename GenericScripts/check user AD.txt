@@ -1,0 +1,15 @@
+Check which AD group this particular user is member of
+---------------------------------------------------------------------------------------------
+
+PS C:\Users\atiwar3.s> import-module activedirectory
+PS C:\Users\atiwar3.s> Get-ADPrincipalGroupMembership f61307 | select name
+
+Check who all are member of AD group
+----------------------------------------------------------------------------------------------
+PS C:\Users\abhinavt> net group "InfosysCIPDBAsProd" /domain
+
+
+
+Reference
+f61307- name of the user- dont need to write domain name
+InfosysCIPDBAsProd - name of the AD group

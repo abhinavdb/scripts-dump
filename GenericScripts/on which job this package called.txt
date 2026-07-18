@@ -1,0 +1,8 @@
+select j.name,s.command from msdb..sysjobs j join 
+msdb..sysjobsteps s 
+on j.job_id=s.job_id where
+ s.command like '%SSIS Package for NRC Health Data%'
+
+
+
+

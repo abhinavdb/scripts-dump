@@ -1,0 +1,32 @@
+
+--correct one but take care of where clause
+select immediate_sync,allow_anonymous,* from distribution.dbo.MSpublications
+
+sp_removedbreplication 'Yardi'
+
+select * from distribution..MSReplication_Monitordata
+GO
+select * from distribution..MSsnapshot_agents
+GO
+
+select * from distribution..MSmerge_agents
+GO
+select * from distribution..MSlogreader_agents
+GO
+select * from distribution..MSpublications
+GO
+
+
+delete from distribution..MSReplication_Monitordata 
+delete from distribution..MSReplication_Monitordata 
+delete from distribution..MSsnapshot_agents  
+
+delete from distribution..MSlogreader_agents
+
+delete from distribution..MSpublications 
+
+delete from distribution..MSSubscriptions
+
+
+exec sp_replflush
+GO

@@ -1,0 +1,13 @@
+First check why recovery pending, then only run this if log file is gone 
+if mdf gone, then restore
+
+
+
+ALTER DATABASE MySMSConversations_dev2 SET EMERGENCY;
+GO
+ALTER DATABASE MySMSConversations_dev2 set single_user
+GO
+DBCC CHECKDB (MySMSConversations_dev2, REPAIR_ALLOW_DATA_LOSS) WITH ALL_ERRORMSGS;
+GO
+ALTER DATABASE MySMSConversations_dev2 set multi_user with rollback immediate
+GO

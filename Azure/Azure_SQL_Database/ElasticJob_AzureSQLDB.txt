@@ -1,0 +1,120 @@
+-- Create a SQL login with the specified password
+USE master;
+GO
+CREATE LOGIN elasticjob_user WITH PASSWORD = 'bBCoXtpmU3iggyj';
+GO
+
+-- Create a database user for the login in the target database
+USE yourtargetdatabase;
+GO
+CREATE USER elasticjob_user FOR LOGIN elasticjob_user;
+GO
+
+-- Grant roles to the user in the target database
+USE yourtargetdatabase;
+GO
+ALTER ROLE db_datareader ADD MEMBER elasticjob_user;
+ALTER ROLE db_datawriter ADD MEMBER elasticjob_user;
+ALTER ROLE db_ddladmin ADD MEMBER elasticjob_user;
+GO
+
+-- Create a master key in the job database
+USE [jobdatabase];
+GO
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'bBCoXtpmU3iggyj';
+GO
+
+-- Create a database scoped credential in the job database
+USE [jobdatabase];
+GO
+CREATE DATABASE SCOPED CREDENTIAL ElasticJobCredential
+WITH IDENTITY = 'elasticjob_user',
+SECRET = 'bBCoXtpmU3iggyj';
+GO
+
+-- Create a target group in the job database
+USE jobdatabase;
+GO
+EXEC jobs.sp_add_target_group @target_group_name = 'SQLTargetGroup';
+GO
+
+-- Add a target group member to the target group
+USE jobdatabase;
+GO
+EXEC jobs.sp_add_target_group_member
+    @target_group_name = 'SQLTargetGroup',
+    @target_type = 'SqlDatabase',
+    @server_name = 'denodopoc.database.windows.net',
+    @database_name = 'denodocachedb';
+GO
+
+-- Create a job in the job database
+USE jobdatabase;
+GO
+EXEC jobs.sp_add_job @job_name = 'MyElasticJob';
+GO
+
+-- Add a job step to the job
+USE jobdatabase;
+GO
+EXEC jobs.sp_add_jobstep 
+    @job_name = 'MyElasticJob',
+    @step_name = 'Step 1',
+    @command = 'SELECT TOP 10 * FROM C_BV_AP420_3BS158399682125891318219169792474073019576002427097', 
+    @target_group_name='SQLTargetGroup',
+    @credential_name = 'ElasticJobCredential';
+GO
+
+-- Start the job manually
+USE jobdatabase;
+GO
+EXEC jobs.sp_start_job @job_name = 'MyElasticJob';
+GO
+
+-- Query to check job executions
+USE jobdatabase;
+GO
+SELECT * FROM jobs.job_executions;
+SELECT * FROM jobs.job_task_executions;
+GO
+
+-- Delete operations
+
+-- Find the target_id of the target group member
+USE jobdatabase;
+GO
+SELECT target_id
+FROM jobs.target_group_members
+WHERE target_group_name = 'SQLTargetGroup'
+    AND target_type = 'SqlDatabase'
+    AND server_name = 'denodopoc.database.windows.net'
+    AND database_name = 'denodocachedb';
+GO
+
+-- Delete the target group member using the target_id obtained
+USE jobdatabase;
+GO
+EXEC jobs.sp_delete_target_group_member 
+    @target_group_name = 'SQLTargetGroup',
+    @target_id = '00F42106-FB21-479C-A041-D034D6F864CA';
+GO
+
+-- Delete the job
+USE jobdatabase;
+GO
+EXEC jobs.sp_delete_job 
+    @job_name = 'MyElasticJob';
+GO
+
+-- Verify the deletion of the target group member
+USE jobdatabase;
+GO
+SELECT * FROM jobs.target_group_members
+WHERE target_group_name = 'SQLTargetGroup';
+
+-- Verify the deletion of the job
+USE jobdatabase;
+GO
+SELECT * FROM jobs.jobs
+WHERE job_name = 'MyElasticJob';
+GO

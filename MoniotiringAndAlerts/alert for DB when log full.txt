@@ -1,0 +1,170 @@
+-- create these tables in DBAutility database
+CREATE TABLE OpenTranStatus (  
+   ActiveTransaction VARCHAR(25),  
+   Details sql_variant,
+   RowID int Identity(1,1)
+   ); 
+   GO
+
+   CREATE TABLE InputBuffer (  
+  EvetType VARCHAR(50),  
+   Parameterss nvarchar(50)  ,
+   SQLText nvarchar(MAX),
+   CollectedTime datetime
+   );  
+   GO
+
+-- Run the below code inside SQL job to alert DBA team when Tempdb log file is about to fill or any other database and store the information in DBA utlility database
+
+SET NOCOUNT ON
+DECLARE @threshold   INT = 90
+CREATE TABLE #tlogtables
+(
+   databaseName   sysname,
+   logSize        DECIMAL (18, 5),
+   logUsed        DECIMAL (18, 5),
+   status         INT
+)
+
+INSERT INTO #tlogtables
+EXECUTE ('DBCC SQLPERF(LOGSPACE)')
+
+SELECT databaseName,
+       logSize,
+       logUsed,
+       status
+  FROM #tlogtables
+ WHERE logUsed >= (@threshold) AND databaseName = 'tempdb'
+
+
+IF OBJECT_ID ('tempdb..#tlogtables') IS NOT NULL
+   BEGIN
+      EXEC msdb.dbo.sp_send_dbmail @profile_name = '',
+                                   @body         = 'Transaction Log file for Tempdb has reached the threshold value of 90 percent',
+                                   @recipients   = '',
+                                   @subject      = 'ALERT:Transaction Log file for Tempdb has reached the threshold value of 90 percent';
+   END
+DROP TABLE #tlogtables
+GO
+Use tempdb
+IF OBJECT_ID('tempdb..#OpenTranStatus') IS NOT NULL
+DROP TABLE #OpenTranStatus
+GO
+IF OBJECT_ID('tempdb..#InputBuffer') IS NOT NULL
+DROP TABLE #InputBuffer
+GO
+CREATE TABLE #OpenTranStatus (  
+   ActiveTransaction VARCHAR(25),  
+   Details sql_variant   
+   ); 
+
+   CREATE TABLE #InputBuffer (  
+  EvetType VARCHAR(50),  
+   Parameterss nvarchar(50)  ,
+   SQLText nvarchar(MAX)
+   );
+
+
+   Declare @id sql_variant
+   declare @query nvarchar(100)
+
+
+-- Execute the command, putting the results in the table.  
+INSERT INTO #OpenTranStatus   
+   EXEC ('DBCC OPENTRAN WITH TABLERESULTS, NO_INFOMSGS');  
+  
+SET @id= (select Details from #OpenTranStatus where ActiveTransaction='OLDACT_SPID')
+set @query='DBCC INPUTBUFFER('+convert(varchar(max),@id)+')'
+
+  
+INSERT INTO #InputBuffer   
+   EXEC (@query);  
+GO 
+
+Insert into [master].[dbo].[OpenTranStatus]([ActiveTransaction],[Details])
+Select [ActiveTransaction],[Details] from #OpenTranStatus
+GO
+Insert into [master].[dbo].[InputBuffer]([EvetType],[Parameterss] ,[SQLText],[CollectedTime])
+select [EvetType],[Parameterss] ,[SQLText],GETDATE() from #InputBuffer
+GO
+
+DROP table #OpenTranStatus
+DROP table #InputBuffer
+
+
+----------------------------------------------
+alert for DB log full
+SET NOCOUNT ON
+DECLARE @threshold   INT = 95
+IF OBJECT_ID('tempdb..#tlogtables') IS NOT NULL
+DROP TABLE #tlogtables
+CREATE TABLE #tlogtables
+(
+   databaseName   sysname,
+   logSize        DECIMAL (18, 5),
+   logUsed        DECIMAL (18, 5),
+   status         INT
+)
+
+INSERT INTO #tlogtables
+EXECUTE ('DBCC SQLPERF(LOGSPACE)')
+
+declare @SQLdmRepositorythrs int=0
+select @SQLdmRepositorythrs=count(*) from #tlogtables where logUsed >= (@threshold) AND databaseName = 'SQLdmRepository'
+print (@SQLdmRepositorythrs)
+
+if @SQLdmRepositorythrs>0
+Begin
+
+
+IF OBJECT_ID('tempdb..#OpenTranStatus') IS NOT NULL
+DROP TABLE #OpenTranStatus
+
+IF OBJECT_ID('tempdb..#InputBuffer') IS NOT NULL
+DROP TABLE #InputBuffer
+
+CREATE TABLE #OpenTranStatus (  
+   ActiveTransaction VARCHAR(25),  
+   Details sql_variant   
+   ); 
+
+   CREATE TABLE #InputBuffer (  
+  EvetType VARCHAR(50),  
+   Parameterss nvarchar(50)  ,
+   SQLText nvarchar(MAX)
+   );
+
+
+   Declare @id sql_variant
+   declare @query nvarchar(100)
+
+
+-- Execute the command, putting the results in the table.  
+INSERT INTO #OpenTranStatus   
+   EXEC ('DBCC OPENTRAN WITH TABLERESULTS, NO_INFOMSGS');  
+  
+SET @id= (select Details from #OpenTranStatus where ActiveTransaction='OLDACT_SPID')
+set @query='DBCC INPUTBUFFER('+convert(varchar(max),@id)+')'
+
+  
+INSERT INTO #InputBuffer   
+   EXEC (@query);  
+
+
+Insert into [master].[dbo].[OpenTranStatus]([ActiveTransaction],[Details])
+Select [ActiveTransaction],[Details] from #OpenTranStatus
+
+Insert into [master].[dbo].[InputBuffer]([EvetType],[Parameterss] ,[SQLText],[CollectedTime])
+select [EvetType],[Parameterss] ,[SQLText],GETDATE() from #InputBuffer
+
+
+DROP table #OpenTranStatus
+DROP table #InputBuffer
+
+END
+ELSE
+print 'No active Tran'
+
+
+
+

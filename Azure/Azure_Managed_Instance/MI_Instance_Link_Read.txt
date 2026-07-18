@@ -1,0 +1,97 @@
+-- Run on SQL Server
+-- Create a master key encryption password
+-- Keep the password confidential and in a secure place
+USE MASTER
+IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE symmetric_key_id = 101)
+BEGIN
+    PRINT 'Creating master key.' + CHAR(13) + 'Keep the password confidential and in a secure place.'
+    CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'srQertong@#@$fghfu'
+END
+ELSE
+    PRINT 'Master key already exists.'
+GO
+
+-- Create the SQL Server certificate for the instance link
+USE MASTER
+
+-- Customize SQL Server certificate expiration date by adjusting the date below
+DECLARE @cert_expiry_date AS varchar(max)='03/30/2025'
+
+-- Build the query to generate the certificate
+DECLARE @sqlserver_certificate_name NVARCHAR(MAX) = N'Cert_' + @@servername  + N'_endpoint'
+DECLARE @sqlserver_certificate_subject NVARCHAR(MAX) = N'Certificate for ' + @sqlserver_certificate_name
+DECLARE @create_sqlserver_certificate_command NVARCHAR(MAX) = N'CREATE CERTIFICATE [' + @sqlserver_certificate_name + '] ' + char (13) +
+'    WITH SUBJECT = ''' + @sqlserver_certificate_subject + ''',' + char (13) +
+'    EXPIRY_DATE = '''+ @cert_expiry_date + ''''+ char (13)
+IF NOT EXISTS (SELECT name from sys.certificates WHERE name = @sqlserver_certificate_name)
+BEGIN
+    PRINT (@create_sqlserver_certificate_command)
+    -- Execute the query to create SQL Server certificate for the instance link
+    EXEC sp_executesql @stmt = @create_sqlserver_certificate_command
+END
+ELSE
+    PRINT 'Certificate ' + @sqlserver_certificate_name + ' already exists.'
+GO
+
+
+******* IMP ******************************************
+MI link also need encrypted endpoint
+
+-- Run on SQL Server
+-- Create a connection endpoint listener on SQL Server, the below script will alter the existing endpoint since both MI link 
+and Always on , if already have uses database_mirroring_endpoints , then it can be problem. We have to alter the exisintg dataabse mirroring endpoint. Creating
+new is fine but altering exiting hadr_endpoint(database_mirrroring)  breaks existing AG, so we have to backup key and certificate to secondary server, but database is not encrypted but endpoint is, but still we have to do it.
+
+I already have the AG configured for my database and need to configure MI link, since endpoint is not encrypted for existing AG but endpoting en required for MI link, how to finx?
+1) backup the certificate(master key encryption) created above on primary server
+2) restore the certificate on secondary server AG replica
+3) alter the endpoting with certificate encryption on primary server(AG will stop synchign)
+4) alter the endpoint with same certficate on secondary server(thats why we restored on secondary server)
+5) now we have got our existing AG backup with encrypted endpoint
+
+USE MASTER
+alter ENDPOINT Hadr_endpoint
+    STATE=STARTED   
+    AS TCP (LISTENER_PORT=5022, LISTENER_IP = ALL)
+    FOR DATABASE_MIRRORING (
+        ROLE=ALL,
+        AUTHENTICATION = CERTIFICATE [Cert_SQL-VM-1_endpoint],
+        ENCRYPTION = REQUIRED ALGORITHM AES
+    )  
+GO
+
+-- this is to create new endpoint encryted
+
+-- Run on SQL Server
+-- Create a connection endpoint listener on SQL Server
+USE MASTER
+CREATE ENDPOINT database_mirroring_endpoint
+    STATE=STARTED   
+    AS TCP (LISTENER_PORT=5022, LISTENER_IP = ALL)
+    FOR DATABASE_MIRRORING (
+        ROLE=ALL,
+        AUTHENTICATION = CERTIFICATE [<SQL_SERVER_CERTIFICATE>],
+        ENCRYPTION = REQUIRED ALGORITHM AES
+    )  
+GO
+
+-- Run on SQL Server
+-- View database mirroring endpoints on SQL Server
+SELECT
+    name, type_desc, state_desc, role_desc, connection_auth_desc,
+    is_encryption_enabled, encryption_algorithm_desc
+FROM
+    sys.database_mirroring_endpoints
+	
+	
+	******Analysis
+	1-it configures single AG on sql server
+	2-it configures single AG for same database on MI
+	3-it configures distributed AG between those two AG's
+	4. the MI link can be configured for seperate database (where a AG exists on different database but you know the drill for endpoting alter with certificate)
+	and MI link can also be configured for a database that is already in AG, how ?, MI link is intelligent, as soon as you right click the existing AG database to configure MI link
+	it know internally that this DB is in already AG, so it will not create a new single AG on source sql server as it does normally for seperate database since MI is distributed AG tech
+	which means link between two AG's, rather it will use the existing AG of database that you right clikced for MI link but it will create a new AG on MI side to link it for existing AG.
+	
+	5. We cant configure listener for MI link distributed AG, we have to use MI name only for REad workload since its DAG tech.
+	6. Not possible to stop managed instance where mi link configured

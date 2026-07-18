@@ -1,0 +1,117 @@
+use master
+go
+
+---routing:
+ALTER AVAILABILITY GROUP AG_LOKY_PROD
+ MODIFY REPLICA ON
+N'WMSPRDSQL002' WITH
+(SECONDARY_ROLE (ALLOW_CONNECTIONS = READ_ONLY));
+GO
+ALTER AVAILABILITY GROUP AG_LOKY_PROD
+ MODIFY REPLICA ON
+N'WMSPRDSQL002' WITH
+(SECONDARY_ROLE (READ_ONLY_ROUTING_URL = N'TCP://WMSPRDSQL002.omi.com:1433'));
+GO
+ALTER AVAILABILITY GROUP AG_LOKY_PROD
+ MODIFY REPLICA ON
+N'WMSPRDSQL003' WITH
+(SECONDARY_ROLE (ALLOW_CONNECTIONS = READ_ONLY));
+GO
+ALTER AVAILABILITY GROUP AG_LOKY_PROD
+ MODIFY REPLICA ON
+N'WMSPRDSQL003' WITH
+(SECONDARY_ROLE (READ_ONLY_ROUTING_URL = N'TCP://WMSPRDSQL003.omi.com:1433'));
+GO
+
+---routing list:
+ALTER AVAILABILITY GROUP AG_LOKY_PROD
+ MODIFY REPLICA ON
+N'WMSPRDSQL002' WITH
+(PRIMARY_ROLE (READ_ONLY_ROUTING_LIST=('WMSPRDSQL003','WMSPRDSQL002')));
+GO
+ALTER AVAILABILITY GROUP AG_LOKY_PROD
+ MODIFY REPLICA ON
+N'WMSPRDSQL003' WITH
+(PRIMARY_ROLE (READ_ONLY_ROUTING_LIST=('WMSPRDSQL002','WMSPRDSQL003')));
+GO
+
+--verify-------------------------------------------------------------------------------------------------------
+use master
+go
+
+SELECT agl.name AS AVGName
+ , listernr.dns_name AS ListenerName
+ , listernr.ip_configuration_string_from_cluster AS ListenerIP
+FROM sys.availability_group_listeners listernr
+INNER JOIN sys.availability_groups agl on agl.group_id = listernr.group_id
+
+
+SELECT   replicaSource.replica_server_name AS SourceReplica
+ , replica.replica_server_name AS ReadOnlyReplica
+ , replica.read_only_routing_url AS RoutingURL
+ , routelist.routing_priority AS RoutingPriority
+ FROM sys.availability_read_only_routing_lists routelist
+ INNER JOIN sys.availability_replicas replicaSource ON routelist.replica_id = replicaSource.replica_id
+ INNER JOIN sys.availability_replicas replica ON routelist.read_only_replica_id = replica.replica_id
+ INNER JOIN sys.availability_groups ag ON ag.group_id = replicaSource.group_id
+ ORDER BY SourceReplica
+
+ 
+SELECT replica_server_name
+	, read_only_routing_url
+	, secondary_role_allow_connections_desc
+FROM sys.availability_replicas
+--------------------------------------------------------------------------------------------------------------------
+sqlcmd -S agl_loky_prod.omi.com -E -d AG_LOKY_Placeholder -K ReadOnly
+sqlcmd -S agl_loky_prod.omi.com -E -d AG_LOKY_Placeholder -K ReadOnly -Q "SELECT db_name() as dbname,@@servername as srvr"
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+OMNI configure
+
+use master
+go
+
+
+
+---routing:
+ALTER AVAILABILITY GROUP MDDCOMN002CDMSQL
+MODIFY REPLICA ON
+N'MDDCOMN002CDM19' WITH
+(SECONDARY_ROLE (ALLOW_CONNECTIONS = READ_ONLY));
+GO
+ALTER AVAILABILITY GROUP MDDCOMN002CDMSQL
+MODIFY REPLICA ON
+N'MDDCOMN002CDM19' WITH
+(SECONDARY_ROLE (READ_ONLY_ROUTING_URL = N'TCP://MDDCOMN002CDM19.OMIMF-DEV.LOCAL:1433'));
+GO
+
+
+
+ALTER AVAILABILITY GROUP MDDCOMN002CDMSQL
+MODIFY REPLICA ON
+N'MDDCOMN003CDM19' WITH
+(SECONDARY_ROLE (ALLOW_CONNECTIONS = READ_ONLY));
+GO
+ALTER AVAILABILITY GROUP MDDCOMN002CDMSQL
+MODIFY REPLICA ON
+N'MDDCOMN003CDM19' WITH
+(SECONDARY_ROLE (READ_ONLY_ROUTING_URL = N'TCP://MDDCOMN003CDM19.OMIMF-DEV.LOCAL:1433'));
+GO
+
+
+
+---routing list:
+ALTER AVAILABILITY GROUP MDDCOMN002CDMSQL
+MODIFY REPLICA ON
+N'MDDCOMN002CDM19' WITH
+(PRIMARY_ROLE (READ_ONLY_ROUTING_LIST=('MDDCOMN003CDM19','MDDCOMN002CDM19')));
+GO
+ALTER AVAILABILITY GROUP MDDCOMN002CDMSQL
+MODIFY REPLICA ON
+N'MDDCOMN003CDM19' WITH
+(PRIMARY_ROLE (READ_ONLY_ROUTING_LIST=('MDDCOMN002CDM19','MDDCOMN003CDM19')));
+GO
+
+sqlcmd -S mddcomnisql001.omimf.local -E -d PROD -K ReadOnly
+

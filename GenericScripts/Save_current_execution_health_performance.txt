@@ -1,0 +1,110 @@
+USE [master]
+GO
+CREATE TABLE [dbo].[dbcollect](
+	[sessionid] [int] NULL,
+	[hostProcessid] [int] NULL,
+	[STATUS] [varchar](max) NULL,
+	[blockingSessionid] [varchar](max) NULL,
+	[waittype] [varchar](max) NULL,
+	[waitresource] [varchar](max) NULL,
+	[waitTime] [varchar](max) NULL,
+	[cputime] [varchar](max) NULL,
+	[logical_reads] [varchar](max) NULL,
+	[reads] [varchar](max) NULL,
+	[writes] [varchar](max) NULL,
+	[elapsed_time] [varchar](max) NULL,
+	[query_text] [varchar](max) NULL,
+	[stored_proc] [varchar](max) NULL,
+	[xml_plan] [xml] NULL,
+	[command] [varchar](max) NULL,
+	[login_name] [varchar](max) NULL,
+	[host_name] [varchar](max) NULL,
+	[program_name] [varchar](max) NULL,
+	[host_process_id] [varchar](max) NULL,
+	[last_request_end_time] [datetime] NULL,
+	[login_time] [datetime] NULL,
+	[open_transaction_count] [varchar](max) NULL,
+	[CaptureTime] [datetime] NULL
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+CREATE TABLE [dbo].[dbcollect2](
+	[Information] [varchar](max) NULL,
+	[sessionid] [int] NULL,
+	[WaitDuration_MS] [varchar](max) NULL,
+	[waitType] [varchar](max) NULL,
+	[BlockingSessionID] [int] NULL,
+	[ResourceDeescription] [varchar](max) NULL,
+	[ProgramName] [varchar](max) NULL,
+	[Text] [varchar](max) NULL,
+	[DBID] [int] NULL,
+	[QueryPlan] [xml] NULL,
+	[DatabaseId] [varchar](max) NULL,
+	[CPUTime] [bigint] NULL,
+	[MemoryUsage] [varchar](max) NULL,
+	[CaptureTime] [datetime] NULL
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+insert into [master].[dbo].[dbcollect]
+SELECT s.session_id,s.host_process_id
+    ,r.STATUS
+    ,r.blocking_session_id AS 'blocked_by'
+    ,r.wait_type
+    ,r.wait_resource
+    ,CONVERT(VARCHAR, DATEADD(ms, r.wait_time, 0), 8) AS 'wait_time'
+    ,r.cpu_time
+    ,r.logical_reads
+    ,r.reads
+    ,r.writes
+    ,
+     r.total_elapsed_time  AS 'elapsed_time'
+    ,CAST((
+            '<?query --  ' + CHAR(13) + CHAR(13) + Substring(st.TEXT, (r.statement_start_offset / 2) + 1, (
+                    (
+                        CASE r.statement_end_offset
+                            WHEN - 1
+                                THEN Datalength(st.TEXT)
+                            ELSE r.statement_end_offset
+                            END - r.statement_start_offset
+                        ) / 2
+                    ) + 1) + CHAR(13) + CHAR(13) + '--?>'
+            ) AS text) AS 'query_text'
+    ,COALESCE(QUOTENAME(DB_NAME(st.dbid)) + N'.' + QUOTENAME(OBJECT_SCHEMA_NAME(st.objectid, st.dbid)) + N'.' + 
+     QUOTENAME(OBJECT_NAME(st.objectid, st.dbid)), '') AS 'stored_proc'
+    ,qp.query_plan AS 'xml_plan'  -- uncomment (1) if you want to see plan
+    ,r.command
+    ,s.login_name
+    ,s.host_name
+    ,s.program_name
+    ,s.host_process_id
+    ,s.last_request_end_time
+    ,s.login_time
+    ,r.open_transaction_count,GETDATE()
+FROM sys.dm_exec_sessions AS s
+INNER JOIN sys.dm_exec_requests AS r ON r.session_id = s.session_id
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS st
+OUTER APPLY sys.dm_exec_query_plan(r.plan_handle) AS qp -- uncomment (2) if you want to see plan
+ORDER BY r.cpu_time DESC
+    ,r.STATUS
+    ,r.blocking_session_id
+    ,s.session_id 
+GO
+
+
+
+insert into [master].[dbo].[dbcollect2]
+SELECT 'Waiting_tasks' AS [Information], owt.session_id,
+owt.wait_duration_ms, owt.wait_type, owt.blocking_session_id,
+owt.resource_description, es.program_name, est.text,
+est.dbid, eqp.query_plan, er.database_id, es.cpu_time,
+es.memory_usage*8 AS memory_usage_KB,getdate()
+FROM sys.dm_os_waiting_tasks owt
+INNER JOIN sys.dm_exec_sessions es ON owt.session_id = es.session_id
+INNER JOIN sys.dm_exec_requests er ON es.session_id = er.session_id
+OUTER APPLY sys.dm_exec_sql_text (er.sql_handle) est
+OUTER APPLY sys.dm_exec_query_plan (er.plan_handle) eqp
+WHERE es.is_user_process = 1
+ORDER BY owt.session_id;
+GO
+
+

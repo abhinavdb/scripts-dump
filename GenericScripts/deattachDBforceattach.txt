@@ -1,0 +1,41 @@
+-- Switch to master database
+USE master;
+GO
+
+-- Declare a cursor to select all active connections to the database
+DECLARE @spid INT, @sql VARCHAR(255);
+DECLARE c_cursor CURSOR FOR
+SELECT spid
+FROM sys.sysprocesses
+WHERE dbid = DB_ID('MySMSTrans');
+
+-- Open the cursor and iterate through all active connections, killing each one
+OPEN c_cursor;
+FETCH NEXT FROM c_cursor INTO @spid;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @sql = 'KILL ' + CONVERT(VARCHAR(10), @spid);
+    EXEC (@sql);
+    FETCH NEXT FROM c_cursor INTO @spid;
+END
+
+-- Close and deallocate the cursor
+CLOSE c_cursor;
+DEALLOCATE c_cursor;
+
+-- Alter database to set it to MULTI_USER mode
+ALTER DATABASE MySMSTrans SET MULTI_USER WITH ROLLBACK IMMEDIATE;
+GO
+
+-- Detach the database
+EXEC sp_detach_db 'MySMSTrans';
+GO
+
+
+-- force attach if required log file
+USE [master]
+GO
+CREATE DATABASE [MySMSTrans] ON 
+( FILENAME = N'H:\MySMSTrans\MySMSTrans.mdf' ) -- this file what remains and log is lost
+ FOR ATTACH_FORCE_REBUILD_LOG 
+GO

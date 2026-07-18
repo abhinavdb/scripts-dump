@@ -1,0 +1,157 @@
+-- Tested on table Users in Stackoverflow database
+-- Find the maximum date in the current data
+
+DECLARE @MaxCreationDate DATETIME;
+
+SELECT @MaxCreationDate = MAX([CreationDate])
+FROM [StackOverflow].[dbo].[Users];
+
+-- Calculate the start and end dates for the new partition (next 6 months)
+DECLARE @StartDate DATETIME = DATEADD(MONTH, DATEDIFF(MONTH, 0, @MaxCreationDate) + 1, 0);
+DECLARE @EndDate DATETIME = DATEADD(MONTH, 6, @StartDate);
+print @StartDate
+print @EndDate
+-- Check if a partition for the calculated end date already exists
+IF NOT EXISTS (SELECT 1 FROM sys.partition_range_values WHERE value = @EndDate)
+BEGIN
+    -- Create a new partition
+    DECLARE @PartitionNumber INT;
+
+    ALTER PARTITION SCHEME PS_Users_CreationDate
+    NEXT USED [PRIMARY];
+
+    ALTER PARTITION FUNCTION PF_Users_CreationDate()
+    SPLIT RANGE (@EndDate);
+
+    SET @PartitionNumber = $PARTITION.PF_Users_CreationDate(@EndDate);
+
+    -- Print information about the new partition
+    PRINT 'New partition created:';
+    PRINT 'Partition Number: ' + CAST(@PartitionNumber AS VARCHAR(10));
+    PRINT 'Start Date: ' + CAST(@StartDate AS VARCHAR(20));
+    PRINT 'End Date: ' + CAST(@EndDate AS VARCHAR(20));
+END
+ELSE
+BEGIN
+    PRINT 'Partition for the calculated end date already exists.';
+END
+
+----------------------EXAMPLE TWO----------------------------------------------------------------------------------------------------------
+
+---TO automate the partition
+
+ 
+
+-- Find the maximum date in the current data
+
+DECLARE @MaxDate DATETIME;
+
+ 
+
+SELECT @MaxDate = MAX(CASE WHEN r.value IS NOT NULL THEN CONVERT(DATETIME, r.value) END)
+
+FROM sys.tables AS t 
+
+JOIN sys.indexes AS i 
+
+    ON t.object_id = i.object_id 
+
+JOIN sys.partitions AS p 
+
+    ON i.object_id = p.object_id AND i.index_id = p.index_id  
+
+JOIN sys.partition_schemes AS s  
+
+    ON i.data_space_id = s.data_space_id 
+
+JOIN sys.partition_functions AS f  
+
+    ON s.function_id = f.function_id 
+
+LEFT JOIN sys.partition_range_values AS r  
+
+    ON f.function_id = r.function_id and r.boundary_id = p.partition_number 
+
+WHERE
+
+    t.name = 'tblEvent_JS'
+
+    AND i.type <= 1;
+
+ 
+
+-- Calculate the start and end dates for the next quarterly partition
+
+DECLARE @StartDate DATETIME = @MaxDate;
+
+DECLARE @EndDate DATETIME = DATEADD(MONTH, 3, @StartDate);
+
+ 
+
+-- Print the calculated dates
+
+PRINT 'Start Date: ' + CAST(@StartDate AS VARCHAR(20));
+
+PRINT 'End Date: ' + CAST(@EndDate AS VARCHAR(20));
+
+ 
+
+-- Check if a partition for the calculated end date already exists
+
+IF NOT EXISTS (  SELECT *
+
+    FROM sys.partition_range_values where value = @EndDate)
+
+BEGIN
+
+    -- Split the existing partition (adjusting partition 17)
+
+    ALTER PARTITION SCHEME Scheme_Part_Event
+
+    NEXT USED [PRIMARY];
+
+ 
+
+    ALTER PARTITION FUNCTION Part_Event_FN()
+
+    SPLIT RANGE (@EndDate);
+
+ 
+
+    PRINT 'Existing partition adjusted:';
+
+    PRINT 'Start Date: ' + CAST(@StartDate AS VARCHAR(20));
+
+    PRINT 'End Date: ' + CAST(@EndDate AS VARCHAR(20));
+
+ 
+
+    ---- Create a new partition
+
+    ALTER PARTITION SCHEME Scheme_Part_Event
+
+    NEXT USED [PRIMARY];
+
+ 
+
+    ALTER PARTITION FUNCTION Part_Event_FN()
+
+    SPLIT RANGE (@EndDate);
+
+ 
+
+    PRINT 'New partition created:';
+
+    PRINT 'Start Date: ' + CAST(@EndDate AS VARCHAR(20));
+
+    PRINT 'End Date: Max Value';
+
+END
+
+ELSE
+
+BEGIN
+
+    PRINT 'Partition for the calculated end date already exists.';
+
+END

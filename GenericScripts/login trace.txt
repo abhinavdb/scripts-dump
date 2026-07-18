@@ -1,0 +1,13 @@
+select *from ::fn_trace_getinfo(default)
+
+select 
+DatabaseName as [Database Name]
+,ApplicationName as [App Name]
+,HostName as [Host Name]
+,LoginName as[Login Name]
+,SPID
+,StartTime as [Start Time]
+,EndTime as [End Time]
+,TextData as [Query executed]
+from::fn_trace_gettable('C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Log\log_88.trc',5) -- default trace
+Order by 6 DESC

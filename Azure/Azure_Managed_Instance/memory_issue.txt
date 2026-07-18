@@ -1,0 +1,1 @@
+SELECT * FROM sys.dm_os_out_of_memory_events ORDER BY event_time DESC;

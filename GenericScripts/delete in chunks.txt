@@ -1,0 +1,45 @@
+declare @nbrRowstoDelete    integer    =    10
+
+                                         --12757834 records to delete. This script must be executed 10 times to complete the task.
+
+ 
+
+       begin transaction a1
+
+   
+
+                    delete from T_FACT_SALES_GX
+
+                    where dim_date_sk in (  select top (@nbrRowstoDelete) dim_date_sk from T_FACT_SALES_GX where where dim_date_sk between '20210901' and '20220331');
+
+  
+
+      commit transaction a1
+
+ 
+
+      --backup log after each execution of above records to truncate the data inside log file
+
+ 
+
+SET NOCOUNT ON;
+
+DECLARE @r INT;
+
+SET @r = 1;
+
+WHILE @r > 0
+BEGIN
+  BEGIN TRANSACTION;
+
+  Select TOP (10) * from T_FACT_SALES_GX where dim_date_sk between '20210901' and '20220331'
+
+
+
+-- delete TOP (100000) T_FACT_SALES_GX where dim_date_sk between '20210901' and '20220331'
+
+  SET @r = @@ROWCOUNT;
+
+  COMMIT TRANSACTION;
+
+END

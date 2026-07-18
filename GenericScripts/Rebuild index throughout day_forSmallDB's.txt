@@ -1,0 +1,73 @@
+-- control variable
+DECLARE @LockTimeout int = 30000	-- in milliseconds; <=0 is no lock timeout
+--
+SET NOCOUNT ON
+DECLARE @LockTimeoutCommand nvarchar(max) = ''
+IF @LockTimeout >= 1
+	SET @LockTimeoutCommand = N'SET LOCK_TIMEOUT '+ CONVERT(nvarchar,@LockTimeout) +N'; '
+--
+DECLARE @StartTime datetime = GETDATE();
+DECLARE @Command nvarchar(max)
+DECLARE @DatabaseName nvarchar(max) = DB_NAME();
+DECLARE @ObjectName nvarchar(max)
+DECLARE @CurrentExtendedInfo xml
+DECLARE @Error int
+DECLARE @ErrorMessageOriginal nvarchar(max)
+--
+DECLARE @JDAtop table (
+	tablename sysname,
+	completed bit )
+INSERT INTO @JDAtop VALUES ('invlod',0);
+INSERT INTO @JDAtop VALUES ('invsub',0);
+INSERT INTO @JDAtop VALUES ('invdtl',0);
+INSERT INTO @JDAtop VALUES ('prtmst',0);
+INSERT INTO @JDAtop VALUES ('pckwrk_dtl',0);
+INSERT INTO @JDAtop VALUES ('pckwrk_hdr',0);
+INSERT INTO @JDAtop VALUES ('wrkque',0);
+INSERT INTO @JDAtop VALUES ('locmst',0);
+INSERT INTO @JDAtop VALUES ('invmov',0);
+
+WHILE EXISTS (select NULL from @JDAtop where completed = 0)
+	BEGIN
+	SELECT TOP(1) @ObjectName = tablename
+	FROM @JDAtop
+	WHERE completed = 0;
+
+	SET @Command = @LockTimeoutCommand + N'ALTER INDEX ALL ON ' + @ObjectName + ' REBUILD;'
+	SET @CurrentExtendedInfo = NULL
+	SET @Error = NULL
+	SET @ErrorMessageOriginal = NULL
+
+	-- extended info
+    SET @CurrentExtendedInfo = 
+		(SELECT * FROM
+			(SELECT ind.name as [IndexName], 
+					cast(avg_fragmentation_in_percent as decimal(18,1)) as [Fragmentation], 
+					page_count as [PageCount], 
+					STATS_DATE(ind.object_id,ind.index_id) as [StatsDate]
+			FROM sys.tables tbl
+			INNER JOIN sys.indexes ind
+					ON tbl.object_id = ind.object_id 
+			INNER JOIN sys.dm_db_index_physical_stats(DB_ID(), OBJECT_ID(@ObjectName), NULL, NULL, 'LIMITED') indexstats
+					ON ind.object_id = indexstats.object_id
+					AND ind.index_id = indexstats.index_id
+			WHERE ind.type_desc <> 'HEAP' 
+			AND index_type_desc <> 'HEAP' 
+			AND object_name(tbl.object_id) = @ObjectName ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS) ;
+
+	BEGIN TRY
+		EXECUTE(@Command)
+	END TRY
+	BEGIN CATCH
+		SET @Error = ERROR_NUMBER()
+		SET @ErrorMessageOriginal = ERROR_MESSAGE()
+	END CATCH
+
+	INSERT INTO [DBUtility].[dbo].[CommandLog]
+	(DatabaseName,ObjectName,ExtendedInfo,Command,CommandType,StartTime,EndTime,ErrorNumber,ErrorMessage)
+	VALUES
+	(@DatabaseName,@ObjectName,@CurrentExtendedInfo,@Command,'MANUAL_REBUILD_ALL',@StartTime,GETDATE(),@Error,@ErrorMessageOriginal );
+
+	UPDATE @JDAtop SET completed = 1
+	WHERE tablename = @ObjectName ;
+	END

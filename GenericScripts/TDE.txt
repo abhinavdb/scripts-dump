@@ -1,0 +1,97 @@
+SELECT db_name(database_id), encryption_state,*
+FROM sys.dm_database_encryption_keys;
+
+SELECT DB_NAME(database_id) AS DatabaseName, encryption_state,
+encryption_state_desc =
+CASE encryption_state
+WHEN '0' THEN 'No database encryption key present, no encryption'
+WHEN '1' THEN 'Unencrypted'
+WHEN '2' THEN 'Encryption in progress'
+WHEN '3' THEN 'Encrypted'
+WHEN '4' THEN 'Key change in progress'
+WHEN '5' THEN 'Decryption in progress'
+WHEN '6' THEN 'Protection change in progress (The certificate or asymmetric key that is encrypting the database encryption key is being changed.)'
+ELSE 'No Status'
+END,
+percent_complete,encryptor_thumbprint, encryptor_type FROM sys.dm_database_encryption_keys
+-- WHERE DB_NAME(database_id) = 'database_name' --sepcify database
+
+--View TDE database name and certiciate------------------------------------------------------------
+
+select
+    database_name = d.name,
+    dek.encryptor_type,
+    cert_name = c.name
+from sys.dm_database_encryption_keys dek
+left join sys.certificates c
+on dek.encryptor_thumbprint = c.thumbprint
+inner join sys.databases d
+on dek.database_id = d.database_id;
+
+***********************************************************************************************************************
+Practice
+*****************************************************************************************************************************
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+USE Master;
+SELECT *
+FROM sys.symmetric_keys
+WHERE name = '##MS_ServiceMasterKey##';
+
+USE master;
+GO
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'Password@123#';
+GO
+
+CREATE CERTIFICATE MyServerCert WITH SUBJECT = 'My DEK Certificate';
+GO
+
+USE AdventureWorks2022;
+GO
+CREATE DATABASE ENCRYPTION KEY
+WITH ALGORITHM = AES_256
+ENCRYPTION BY SERVER CERTIFICATE MyServerCert;
+GO
+ALTER DATABASE AdventureWorks2022
+SET ENCRYPTION ON;
+GO
+
+----backup
+
+BACKUP CERTIFICATE MyServerCert   
+TO FILE = 'F:\backupsystemdatabase\TestSQLServerCert'  
+WITH PRIVATE KEY   
+(  
+    FILE = 'F:\backupsystemdatabase\SQLPrivateKeyFile',  
+    ENCRYPTION BY PASSWORD = '*rt@40(FL&dasl11'  
+);  
+GO  
+
+server 1 new backups with new pasword sql server
+------------------------------------
+USE master
+GO
+BACKUP CERTIFICATE MyServerCert
+TO FILE = 'F:\newtdebackup\TDE_AVG'
+WITH PRIVATE KEY (file='F:\newtdebackup\TDE_AVG_Pirvate',
+ENCRYPTION BY PASSWORD='Lm_s$$15_12')
+
+REstored on server 2 sql server
+--------------------------------
+CREATE CERTIFICATE MyServerCert
+FROM FILE='F:\newtdebackup\TDE_AVG'
+WITH PRIVATE KEY (
+FILE = 'F:\newtdebackup\TDE_AVG_Pirvate',
+DECRYPTION BY PASSWORD='Lm_s$$15_12')
+
+
+
+ALTER DATABASE StackOverflow2013 SET ENCRYPTION SUSPEND;
+
+ALTER DATABASE StackOverflow2013 SET ENCRYPTION RESUME;
+
+
+
+
+
+

@@ -1,0 +1,44 @@
+
+DECLARE @MAIL_BODY NVARCHAR(MAX)
+
+
+/* HEADER */
+SET @MAIL_BODY = '<table border="1" align="center" cellpadding="2" cellspacing="0" style="color:black;font-family:consolas;text-align:center;">' +
+    '<tr>
+    
+    <th>SERVER_NAME</th>
+    <th>JOB_NAME</th>
+    <th>JOB_FREQUENCY</th>
+    <th>LASTRUNTIME</th>
+    <th>JOB_STATUS</th>
+   <th>DATE_WRITTEN</th>
+    </tr>'
+;With results(SERVER_NAME,JOB_NAME,JOB_FREQUENCY,LASTRUNTIME,JOB_STATUS,DATE_WRITTEN) AS
+(
+
+SELECT SERVER_NAME,JOB_NAME,JOB_FREQUENCY,LASTRUNTIME,JOB_STATUS,DATE_WRITTEN
+  FROM [DAILYAPPSSTATUS].[dbo].[TB_SQLJOB_DETAILS] 
+  where DATE_WRITTEN=(SELECT DATEADD(dd, 0, DATEDIFF(dd, 0, GETDATE()))) AND JOB_STATUS='Failed'
+
+)
+--select * from results
+SELECT
+    @MAIL_BODY = @MAIL_BODY +
+        '<tr>' +
+        '<td>' + SERVER_NAME + '</td>' +
+        '<td>' + JOB_NAME + '</td>' +
+        '<td>' + JOB_FREQUENCY + '</td>' +
+       '<td>' + isnull(CONVERT(nvarchar(100), LASTRUNTIME),'') + '</td>' +
+        '<td>' + JOB_STATUS + '</td>' +
+        '<td>' + isnull(CONVERT(nvarchar(100), DATE_WRITTEN),'') + '</td>' +
+        '</tr>'
+FROM results
+
+SELECT @MAIL_BODY = @MAIL_BODY + '</table>'
+
+EXEC msdb.dbo.sp_send_dbmail
+    @profile_name = 'OMDCMCSW001',
+    @recipients = 'DL_OwensMinor_SQLDBA@nttdata.com',
+    @subject = 'PROD Failed Jobs',
+    @body = @MAIL_BODY,
+    @body_format='HTML'

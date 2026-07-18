@@ -1,0 +1,24 @@
+USE MySMS
+
+EXEC sp_changepublication
+
+@publication = 'MySMS_PROD_Repl',
+
+@property = N'allow_anonymous',
+
+@value = 'False'
+
+GO
+
+EXEC sp_changepublication
+
+@publication ='MySMS_PROD_Repl',
+
+@property = N'immediate_sync',
+
+@value ='False'
+
+GO
+
+validation
+select immediate_sync,allow_anonymous,* from distribution.dbo.MSpublications

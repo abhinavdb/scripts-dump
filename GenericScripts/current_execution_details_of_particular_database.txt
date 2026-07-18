@@ -1,0 +1,215 @@
+SELECT
+
+   
+    s.session_id,
+
+    r.STATUS,
+
+    DB_NAME(r.database_id) AS 'DatabaseName',
+
+    r.blocking_session_id AS 'blocked_by',
+
+    r.wait_type as 'Current Wait Type',
+
+    r.wait_resource,
+
+    RIGHT('0' + CAST(r.wait_time / 86400000 AS VARCHAR), 2) + ':' +
+
+     CONVERT(VARCHAR, DATEADD(ms, r.wait_time % 86400000, 0), 8) AS 'wait_time',
+
+    r.cpu_time,
+
+    r.logical_reads,
+
+    r.reads as 'PhysicalReads',
+
+    r.writes,
+
+    RIGHT('0' + CAST(r.total_elapsed_time / 86400000 AS VARCHAR), 2) + ':' +
+
+     CONVERT(VARCHAR, DATEADD(ms, r.total_elapsed_time % 86400000, 0), 8) AS 'LastTrnRunningSince',
+
+
+    CAST((
+
+            '<?query --  ' + CHAR(13) + CHAR(13) + Substring(st.TEXT, (r.statement_start_offset / 2) + 1, (
+
+                    (
+
+                        CASE r.statement_end_offset
+
+                            WHEN - 1
+
+                                THEN Datalength(st.TEXT)
+
+                            ELSE r.statement_end_offset
+
+                            END - r.statement_start_offset
+
+                        ) / 2
+
+                    ) + 1) + CHAR(13) + CHAR(13) + '--?>'
+
+            ) AS XML) AS 'query_text',
+
+    COALESCE(QUOTENAME(DB_NAME(st.dbid)) + N'.' + QUOTENAME(OBJECT_SCHEMA_NAME(st.objectid, st.dbid)) + N'.' + QUOTENAME(OBJECT_NAME(st.objectid, st.dbid)), '') AS 'stored_proc',
+
+    r.command,
+
+    s.login_name,
+
+    s.host_name,
+
+    s.program_name,
+
+    s.host_process_id,
+
+    s.last_request_end_time,s.last_request_start_time,
+
+    s.login_time,
+
+    r.open_transaction_count,
+
+    r.dop as 'DOP',
+
+    getdate() as 'CurrentTime'
+
+ 
+
+-- Memory Grant Data as XML in GB with two decimal places
+
+,(SELECT
+
+       FORMAT(mg.granted_memory_kb / 1048576.0, '0.##') AS 'granted_memory_gb',
+
+    mg.grant_time AS 'MemoryGrant_time',
+
+    FORMAT(mg.requested_memory_kb / 1048576.0, '0.##') AS 'requested_memory_gb',
+
+       FORMAT(mg.required_memory_kb / 1048576.0, '0.##') AS 'required_memory_gb',
+
+    FORMAT(mg.used_memory_kb / 1048576.0, '0.##') AS 'used_memory_gb',
+
+    FORMAT(mg.max_used_memory_kb / 1048576.0, '0.##') AS 'max_used_memory_gb',
+
+       FORMAT(r.granted_query_memory / 1048576.0, '0.##') AS 'granted_query_memory_gb'
+
+FOR XML PATH(''), ROOT('memoryGrant'), TYPE) AS MemoryGrantInfo
+
+ 
+
+FROM sys.dm_exec_sessions AS s
+
+INNER JOIN sys.dm_exec_requests AS r ON r.session_id = s.session_id
+
+LEFT JOIN sys.dm_exec_query_memory_grants AS mg ON mg.session_id = s.session_id
+
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS st
+
+ 
+
+WHERE r.wait_type NOT LIKE 'SP_SERVER_DIAGNOSTICS%'
+
+    AND r.session_id != @@SPID
+
+ORDER BY r.cpu_time DESC, r.STATUS, r.blocking_session_id, s.session_id
+
+go
+/*
+SELECT 'Sleeping Sessions with Open Transaction' AS Note
+
+SELECT
+
+    s.session_id,
+
+    s.status,
+
+    s.login_name,
+
+    s.host_name,
+
+    s.program_name,
+
+    s.last_request_start_time,
+
+    s.last_request_end_time,
+
+    s.open_transaction_count, -- Number of open transactions
+
+    getdate() as 'CurrentTime',
+
+    ISNULL(r.reads, 0) AS Physicalreads,
+
+    ISNULL(r.writes, 0) AS writes,
+
+    ISNULL(r.logical_reads, 0) AS logical_reads,
+
+ 
+
+    -- Lock information in XML format
+
+    (SELECT
+
+         l.resource_type,
+
+         l.request_mode,
+
+         lock_count = COUNT(*)
+
+     FROM sys.dm_tran_locks l
+
+     WHERE l.request_session_id = s.session_id
+
+     GROUP BY l.resource_type, l.request_mode
+
+     FOR XML PATH('lock'), ROOT('locks'), TYPE
+
+    ) AS LockInfo
+
+ 
+
+FROM sys.dm_exec_sessions s
+
+INNER JOIN sys.dm_tran_session_transactions st ON s.session_id = st.session_id
+
+LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
+
+WHERE s.status = 'sleeping'
+
+  AND s.open_transaction_count > 0
+
+ORDER BY s.session_id;
+
+GO
+*/
+
+
+************************************************************************************************************************************************************************************************************************************************************************************
+Starting with SQL 2019-- see the actual plan
+
+SELECT
+[session_id] = R.session_id,
+[request_id] = R.request_id,R.status,
+[database_id] = S.database_id,
+[database_name] = D.name,
+CONVERT(VARCHAR, DATEADD(ms, R.wait_time, 0), 8) AS 'wait_time'
+,CONVERT(VARCHAR, DATEADD(ms, R.total_elapsed_time, 0), 8) AS 'elapsed_time',
+[query_hash] = R.query_hash,
+[query_text] = SUBSTRING(T.text, R.statement_start_offset/2 + 1, (CASE WHEN R.statement_end_offset = -1 THEN LEN(CONVERT(nvarchar(max),T.text)) * 2 ELSE R.statement_end_offset 
+ END-R.statement_start_offset)/2),
+[actual_query_plan_current] = P1.query_plan,
+[actual_query_plan_previous] = P2.query_plan,
+[query_plan_handle] = P1.plan_handle,
+[open_transactions] = S.open_transaction_count,
+[login_name] = S.login_name,
+[program_name] = S.program_name,
+[host_name] = S.host_name,
+[start_time] = R.start_time
+
+FROM sys.dm_exec_requests R
+INNER JOIN sys.dm_exec_sessions S ON R.session_id = S.session_id
+LEFT JOIN sys.databases D ON S.database_id = D.database_id
+CROSS APPLY sys.dm_exec_sql_text(R.sql_handle) T
+OUTER APPLY sys.dm_exec_query_statistics_xml(R.session_id) AS P1
+OUTER APPLY sys.dm_exec_query_plan_stats(P1.plan_handle) AS P2
+ORDER BY R.session_id, R.request_id;

@@ -1,0 +1,83 @@
+
+https://www.brentozar.com/archive/2020/07/what-if-you-really-do-need-to-shrink-a-database/
+https://www.dbi-services.com/blog/moving-tables-online-on-filegroup-with-constraints-and-lob-data/
+
+--Filegroup,FileName
+SELECT DB_NAME() AS DbName,FILEGROUP_NAME(data_space_id) as FilegroupName,
+    name AS FileName, 
+    type_desc,
+    size/128.0 AS CurrentSizeMB,  
+    size/128.0 - CAST(FILEPROPERTY(name, 'SpaceUsed') AS INT)/128.0 AS FreeSpaceMB
+FROM sys.database_files
+WHERE type IN (0,1);
+GO
+
+--Actual data size in physical file(without calculating empty space in database)
+-- this script also generates the table and its allocation type
+
+SELECT TableName, SchemaName, AllocationUnit, FilegroupName,
+       SUM(DataRowCounts) AS DataRowCounts,
+       SUM(DataTotalSpaceGB) AS DataTotalSpaceGB,
+       SUM(DataSpaceUsedGB) AS DataSpaceUsedGB,
+       SUM(DataUnusedSpaceGB) AS DataUnusedSpaceGB,
+       SUM(IndexRowCounts) AS IndexRowCounts,
+       SUM(IndexTotalSpaceGB) AS IndexTotalSpaceGB,
+       SUM(IndexSpaceUsedGB) AS IndexSpaceUsedGB,
+       SUM(IndexUnusedSpaceGB) AS IndexUnusedSpaceGB,
+       SUM(DataTotalSpaceGB) + SUM(IndexTotalSpaceGB) AS TotalSpaceGB
+FROM
+(
+    SELECT t.NAME AS TableName, SCHEMA_NAME(s.schema_id) AS SchemaName,
+           a.type_desc AS AllocationUnit,
+           f.name AS FilegroupName,
+           i.type_desc AS IndexType,
+           CASE
+               WHEN i.type_desc IN ('CLUSTERED', 'CLUSTERED COLUMNSTORE', 'HEAP') THEN CAST(ROUND(((SUM(a.total_pages) * 8) / 1024.00), 2)/1000 AS NUMERIC(36, 2))
+               ELSE 0
+           END AS DataTotalSpaceGB,
+           CASE
+               WHEN i.type_desc IN ('CLUSTERED', 'CLUSTERED COLUMNSTORE', 'HEAP') THEN CAST(ROUND(((SUM(a.used_pages) * 8) / 1024.00), 2)/1000 AS NUMERIC(36, 2))
+               ELSE 0
+           END AS DataSpaceUsedGB,
+           CASE
+               WHEN i.type_desc IN ('CLUSTERED', 'CLUSTERED COLUMNSTORE', 'HEAP') THEN CAST(ROUND(((SUM(a.total_pages) - SUM(a.used_pages)) * 8) / 1024.00, 2)/1000 AS NUMERIC(36, 2))
+               ELSE 0
+           END AS DataUnusedSpaceGB,
+           CASE
+               WHEN i.type_desc IN ('CLUSTERED', 'CLUSTERED COLUMNSTORE', 'HEAP') THEN SUM(p.Rows)
+               ELSE 0
+           END AS DataRowCounts,
+           CASE
+               WHEN i.type_desc = 'NONCLUSTERED' THEN CAST(ROUND(((SUM(a.total_pages) * 8) / 1024.00), 2)/1000 AS NUMERIC(36, 2))
+               ELSE 0
+           END AS IndexTotalSpaceGB,
+           CASE
+               WHEN i.type_desc = 'NONCLUSTERED' THEN CAST(ROUND(((SUM(a.used_pages) * 8) / 1024.00), 2)/1000 AS NUMERIC(36, 2))
+               ELSE 0
+           END AS IndexSpaceUsedGB,
+           CASE
+               WHEN i.type_desc = 'NONCLUSTERED' THEN CAST(ROUND(((SUM(a.total_pages) - SUM(a.used_pages)) * 8) / 1024.00, 2)/1000 AS NUMERIC(36, 2))
+               ELSE 0
+           END AS IndexUnusedSpaceGB,
+           CASE
+               WHEN i.type_desc = 'NONCLUSTERED' THEN SUM(p.Rows)
+               ELSE 0
+           END AS IndexRowCounts
+    FROM sys.tables t
+    INNER JOIN sys.indexes i ON t.OBJECT_ID = i.object_id
+    INNER JOIN sys.partitions p ON i.object_id = p.OBJECT_ID AND i.index_id = p.index_id
+    INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+    INNER JOIN sys.filegroups f ON a.data_space_id = f.data_space_id
+    LEFT JOIN sys.schemas s ON t.schema_id = s.schema_id
+   
+    GROUP BY t.Name,
+             i.type_desc,
+             a.type_desc,
+             f.name, SCHEMA_NAME(s.schema_id)
+) x
+GROUP BY TableName, SchemaName,
+         AllocationUnit,
+         FilegroupName
+ORDER BY TotalSpaceGB DESC;
+
+

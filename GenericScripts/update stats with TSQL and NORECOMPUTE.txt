@@ -1,0 +1,34 @@
+USE BWD
+GO
+SET NOCOUNT ON
+GO
+DECLARE updatestats CURSOR FOR
+SELECT table_schema, table_name  
+FROM INFORMATION_SCHEMA.TABLES
+where TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME  NOT LIKE '%VBHDR%' AND TABLE_NAME NOT LIKE '%VBDATA%' AND TABLE_NAME NOT LIKE '%VBMOD%'
+OPEN updatestats
+DECLARE @tableSchema NVARCHAR(128)
+DECLARE @tableName NVARCHAR(128)
+DECLARE @Statement NVARCHAR(300)
+FETCH NEXT FROM updatestats INTO @tableSchema, @tableName
+WHILE (@@FETCH_STATUS = 0)
+BEGIN
+   PRINT N'UPDATING STATISTICS ' + '[' + @tableSchema + ']' + '.' + '[' + @tableName + '] - Starts @ '+cast(getdate() as varchar)
+   SET @Statement = 'UPDATE STATISTICS '  + '[' + @tableSchema + ']' + '.' + '[' + @tableName + ']' + '  WITH FULLSCAN'
+   --PRINT @Statement
+   EXEC sp_executesql @Statement
+   PRINT '---------------------------------------------------------------------------------------------'
+   FETCH NEXT FROM updatestats INTO @tableSchema, @tableName
+END
+CLOSE updatestats
+DEALLOCATE updatestats
+GO
+SET NOCOUNT OFF
+GO
+
+UPDATE STATISTICS bwd.VBHDR WITH NORECOMPUTE; 
+GO
+UPDATE STATISTICS bwd.VBDATA WITH NORECOMPUTE;
+GO
+UPDATE STATISTICS bwd.VBMOD WITH NORECOMPUTE;
+GO

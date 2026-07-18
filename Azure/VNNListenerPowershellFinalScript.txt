@@ -1,0 +1,8 @@
+$ClusterNetworkName = "Cluster Network 1"
+$IPResourceName = "NewAG_10.0.1.9" 
+$ILBIP = "10.0.1.9" 
+[int]$ProbePort = 59999
+
+Import-Module FailoverClusters
+
+Get-ClusterResource $IPResourceName | Set-ClusterParameter -Multiple @{"Address"="$ILBIP";"ProbePort"=$ProbePort;"SubnetMask"="255.255.255.255";"Network"="$ClusterNetworkName";"EnableDhcp"=0}

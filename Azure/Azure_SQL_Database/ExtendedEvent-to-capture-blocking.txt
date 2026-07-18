@@ -1,0 +1,124 @@
+for Azure SQL Database
+
+CREATE EVENT SESSION [BlockedProcessMonitor] ON DATABASE 
+ADD EVENT sqlserver.blocked_process_report(
+    ACTION(sqlserver.client_app_name,sqlserver.client_hostname,sqlserver.database_id,sqlserver.database_name,sqlserver.plan_handle,sqlserver.session_id,sqlserver.sql_text,sqlserver.username))
+ADD TARGET package0.ring_buffer
+WITH (MAX_MEMORY=4096 KB,EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,MAX_DISPATCH_LATENCY=5 SECONDS,MAX_EVENT_SIZE=0 KB,MEMORY_PARTITION_MODE=NONE,TRACK_CAUSALITY=ON,STARTUP_STATE=ON)
+GO
+
+
+ALTER EVENT SESSION [BlockedProcessMonitor] ON DATABASE STATE = START;
+GO
+
+
+
+-- This is to read the live captured data
+
+WITH RingBuffer AS (
+    SELECT CAST(target_data AS XML) AS TargetData
+    FROM sys.dm_xe_database_session_targets AS xst
+    INNER JOIN sys.dm_xe_database_sessions AS xs
+    ON xst.event_session_address = xs.address
+    WHERE xs.name = N'BlockedProcessMonitor'
+),
+EventNode AS (
+    SELECT CAST(NodeData.query('.') AS XML) AS EventInfo
+    FROM RingBuffer
+    CROSS APPLY TargetData.nodes('/RingBufferTarget/event') AS NodeData(NodeData)
+),
+BlockedProcessDetails AS (
+    SELECT 
+        EventInfo.value('(event/@timestamp)[1]', 'datetime2') AS EventTimestamp,
+        EventInfo.query('(event/data[@name="blocked_process"]/value)[1]') AS BlockedProcessXml
+    FROM EventNode
+)
+SELECT 
+    EventTimestamp,
+    CAST(BlockedProcessXml AS nvarchar(max)) AS BlockedProcessText
+INTO #BlockedProcessDetailsPlain
+FROM BlockedProcessDetails
+ORDER BY EventTimestamp DESC;
+
+-- Select the blocked and blocking session IDs along with the queries
+SELECT 
+    EventTimestamp,
+    SUBSTRING(BlockedProcessText, 
+              CHARINDEX('spid="', BlockedProcessText) + 6, 
+              CHARINDEX('"', BlockedProcessText, CHARINDEX('spid="', BlockedProcessText) + 6) - CHARINDEX('spid="', BlockedProcessText) - 6) AS BlockedSessionId,
+    SUBSTRING(BlockedProcessText, 
+              CHARINDEX('spid="', BlockedProcessText, CHARINDEX('<blocking-process>', BlockedProcessText)) + 6, 
+              CHARINDEX('"', BlockedProcessText, CHARINDEX('spid="', BlockedProcessText, CHARINDEX('<blocking-process>', BlockedProcessText)) + 6) - CHARINDEX('spid="', BlockedProcessText, CHARINDEX('<blocking-process>', BlockedProcessText)) - 6) AS BlockingSessionId,
+    SUBSTRING(BlockedProcessText, 
+              CHARINDEX('<inputbuf>', BlockedProcessText) + 10, 
+              CHARINDEX('</inputbuf>', BlockedProcessText) - CHARINDEX('<inputbuf>', BlockedProcessText) - 10) AS BlockedQueryText,
+    SUBSTRING(BlockedProcessText, 
+              CHARINDEX('<inputbuf>', BlockedProcessText, CHARINDEX('<blocking-process>', BlockedProcessText)) + 10, 
+              CHARINDEX('</inputbuf>', BlockedProcessText, CHARINDEX('<blocking-process>', BlockedProcessText)) - CHARINDEX('<inputbuf>', BlockedProcessText, CHARINDEX('<blocking-process>', BlockedProcessText)) - 10) AS BlockingQueryText
+FROM #BlockedProcessDetailsPlain
+ORDER BY EventTimestamp DESC;
+
+DROP TABLE #BlockedProcessDetailsPlain;
+
+
+
+
+***********************************************************************************************
+
+To save the results
+
+CREATE TABLE BlockedProcessLog (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    EventTimestamp DATETIME2,
+    BlockedSessionId INT,
+    BlockingSessionId INT,
+    BlockedQueryText NVARCHAR(MAX),
+    BlockingQueryText NVARCHAR(MAX),
+    LoggedAt DATETIME2 DEFAULT GETDATE()
+);
+
+
+
+
+CREATE PROCEDURE sp_LogBlockedProcessDetails
+AS
+BEGIN
+    SET NOCOUNT ON;
+WITH RingBuffer AS (
+    SELECT CAST(target_data AS XML) AS TargetData
+    FROM sys.dm_xe_database_session_targets AS xst
+    INNER JOIN sys.dm_xe_database_sessions AS xs
+    ON xst.event_session_address = xs.address
+    WHERE xs.name = N'BlockedProcessMonitor'
+),
+EventNode AS (
+    SELECT CAST(NodeData.query('.') AS XML) AS EventInfo
+    FROM RingBuffer
+    CROSS APPLY TargetData.nodes('/RingBufferTarget/event') AS NodeData(NodeData)
+),
+BlockedProcessDetails AS (
+    SELECT 
+        EventInfo.value('(event/@timestamp)[1]', 'datetime2') AS EventTimestamp,
+        EventInfo.query('(event/data[@name="blocked_process"]/value)[1]') AS BlockedProcessXml
+    FROM EventNode
+)
+INSERT INTO BlockedProcessLog (EventTimestamp, BlockedSessionId, BlockingSessionId, BlockedQueryText, BlockingQueryText)
+SELECT 
+    EventTimestamp,
+    SUBSTRING(CAST(BlockedProcessXml AS nvarchar(max)), 
+              CHARINDEX('spid="', CAST(BlockedProcessXml AS nvarchar(max))) + 6, 
+              CHARINDEX('"', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('spid="', CAST(BlockedProcessXml AS nvarchar(max))) + 6) - CHARINDEX('spid="', CAST(BlockedProcessXml AS nvarchar(max))) - 6) AS BlockedSessionId,
+    SUBSTRING(CAST(BlockedProcessXml AS nvarchar(max)), 
+              CHARINDEX('spid="', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('<blocking-process>', CAST(BlockedProcessXml AS nvarchar(max)))) + 6, 
+              CHARINDEX('"', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('spid="', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('<blocking-process>', CAST(BlockedProcessXml AS nvarchar(max)))) + 6) - CHARINDEX('spid="', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('<blocking-process>', CAST(BlockedProcessXml AS nvarchar(max)))) - 6) AS BlockingSessionId,
+    SUBSTRING(CAST(BlockedProcessXml AS nvarchar(max)), 
+              CHARINDEX('<inputbuf>', CAST(BlockedProcessXml AS nvarchar(max))) + 10, 
+              CHARINDEX('</inputbuf>', CAST(BlockedProcessXml AS nvarchar(max))) - CHARINDEX('<inputbuf>', CAST(BlockedProcessXml AS nvarchar(max))) - 10) AS BlockedQueryText,
+    SUBSTRING(CAST(BlockedProcessXml AS nvarchar(max)), 
+              CHARINDEX('<inputbuf>', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('<blocking-process>', CAST(BlockedProcessXml AS nvarchar(max)))) + 10, 
+              CHARINDEX('</inputbuf>', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('<blocking-process>', CAST(BlockedProcessXml AS nvarchar(max)))) - CHARINDEX('<inputbuf>', CAST(BlockedProcessXml AS nvarchar(max)), CHARINDEX('<blocking-process>', CAST(BlockedProcessXml AS nvarchar(max)))) - 10) AS BlockingQueryText
+FROM BlockedProcessDetails
+ORDER BY EventTimestamp DESC;
+
+
+END;

@@ -1,0 +1,32 @@
+--Query 1: User Connection & Query as a Request
+SELECT REQ.connection_id, REQ.database_id, REQ.session_id, REQ.command, REQ.request_id,
+REQ.start_time, REQ.task_address, QUERY.text
+FROM SYS.dm_exec_requests req Cross apply sys.dm_exec_sql_text (req.sql_handle) as query
+WHERE req.session_id = 55
+
+--Query 2: Request is divided into Task(s)
+SELECT task.task_address, task.parent_task_address, task.task_state, REQ.request_id, REQ.database_id, REQ.session_id,
+REQ.start_time, REQ.command, REQ.connection_id, REQ.task_address, QUERY.text
+FROM SYS.dm_exec_requests req INNER JOIN sys.dm_os_tasks task on req.task_address = task.task_address or req.task_address = task.parent_task_address
+Cross apply sys.dm_exec_sql_text (req.sql_handle) as query
+WHERE req.session_id = 55
+
+--Query 3: Each Task is assigned to a Worker (an available worker)
+
+SELECT worker.worker_address, worker.last_wait_type, worker.state, task.task_address, task.parent_task_address,
+task.task_state, REQ.request_id, REQ.database_id, REQ.session_id, REQ.start_time, REQ.command, REQ.connection_id,
+REQ.task_address
+FROM SYS.dm_exec_requests req INNER JOIN sys.dm_os_tasks task on req.task_address = task.task_address or req.task_address = task.parent_task_address
+INNER JOIN SYS.dm_os_workers WORKER ON TASK.task_address = WORKER.task_address Cross apply sys.dm_exec_sql_text (req.sql_handle) as query
+WHERE req.session_id = 55
+
+--Query 4: Each Worker is associated with a Thread
+SELECT thread.thread_address, thread.priority, thread.processor_group, thread.started_by_sqlservr, worker.worker_address,
+worker.last_wait_type, worker.state, task.task_address, task.parent_task_address, task.task_state, REQ.request_id,
+REQ.database_id, REQ.session_id, REQ.start_time, REQ.command, REQ.connection_id, REQ.task_address
+FROM SYS.dm_exec_requests req INNER JOIN sys.dm_os_tasks task
+on req.task_address = task.task_address or req.task_address = task.parent_task_address
+INNER JOIN SYS.dm_os_workers WORKER ON TASK.task_address = WORKER.task_address
+INNER JOIN sys.dm_os_threads thread on worker.thread_address = thread.thread_address
+Cross apply sys.dm_exec_sql_text (req.sql_handle) as query
+WHERE req.session_id = 55

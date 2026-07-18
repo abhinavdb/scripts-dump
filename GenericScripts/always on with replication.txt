@@ -1,0 +1,21 @@
+
+After configuring Replication with remote distributor on primary server, run the below command for re-direct
+
+
+USE distribution;  
+GO  
+EXEC sp_redirect_publisher   
+@original_publisher = 'MDDCOMN002CDM19',  -- primary node in always on
+@publisher_db = 'DEV1',  -- run for each replicated database
+@redirected_publisher = '10.96.67.150'; -- always-on listener IP
+GO
+
+
+
+USE distribution;  
+GO  
+DECLARE @redirected_publisher sysname;  
+EXEC sys.sp_validate_replica_hosts_as_publishers  
+    @original_publisher = 'MDDCOMN002CDM19',  
+    @publisher_db = 'DEV1',  
+    @redirected_publisher = @redirected_publisher output;
