@@ -1,0 +1,72 @@
+<#
+.SYNOPSIS
+    Prevents session lock and RDP idle disconnect by simulating minimal mouse movement.
+
+.NOTES
+    - Works for local sessions and RDP sessions.
+    - Does NOT override server-side Group Policy that hard-disconnects sessions.
+    - Does NOT prevent account lockout from failed auth attempts (unrelated).
+    - Run in a separate PowerShell window. Ctrl+C to stop cleanly.
+#>
+
+#region --- Configuration ---
+$IntervalSeconds = 55       # How often to wiggle. Keep below your idle timeout threshold.
+$WigglePixels    = 2        # Pixels to move mouse. Immediately reverses. Barely visible.
+$LogActivity     = $true    # Set $false to suppress console output.
+#endregion
+
+#region --- Setup ---
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# Trap Ctrl+C for a clean exit message
+[Console]::TreatControlCAsInput = $false
+$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Keep-alive stopped." -ForegroundColor Yellow
+}
+#endregion
+
+#region --- Main Loop ---
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  Session Keep-Alive | Interval: ${IntervalSeconds}s" -ForegroundColor Cyan
+Write-Host "  Started : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "  Press Ctrl+C to stop."
+Write-Host "================================================" -ForegroundColor Cyan
+
+$counter = 0
+
+try {
+    while ($true) {
+        $counter++
+
+        # Capture current mouse position
+        $originalPos = [System.Windows.Forms.Cursor]::Position
+
+        # Wiggle: move right by $WigglePixels
+        $movedPos = New-Object System.Drawing.Point(
+            ($originalPos.X + $WigglePixels),
+            $originalPos.Y
+        )
+        [System.Windows.Forms.Cursor]::Position = $movedPos
+
+        # Brief pause so the OS registers the move as an input event
+        Start-Sleep -Milliseconds 150
+
+        # Return to exact original position
+        [System.Windows.Forms.Cursor]::Position = $originalPos
+
+        if ($LogActivity) {
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Ping #$counter | Position: ($($originalPos.X), $($originalPos.Y))" `
+                -ForegroundColor DarkGray
+        }
+
+        Start-Sleep -Seconds $IntervalSeconds
+    }
+}
+catch [System.Exception] {
+    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Error: $($_.Exception.Message)" -ForegroundColor Red
+}
+finally {
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Keep-alive stopped. Total pings: $counter" -ForegroundColor Yellow
+}
+#endregion
